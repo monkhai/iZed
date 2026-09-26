@@ -15,7 +15,7 @@ use super::IosDisplay;
 use crate::momentum::{MomentumScroller, VelocityTracker};
 use gpui::{
     point, px, size, AnyWindowHandle, AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile,
-    Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels,
+    Bounds, Capslock, CursorStyle, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers, Pixels,
     PlatformAtlas, PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point,
     PromptButton, PromptLevel, RequestFrameOptions, Scene, Size, TileId, WindowAppearance,
     WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams,
@@ -35,12 +35,41 @@ use std::{
     ptr::{self, NonNull},
     rc::Rc,
     sync::Arc,
+    sync::atomic::{AtomicPtr, AtomicU8, Ordering},
     time::{Duration, Instant},
 };
 
 const GPUI_WINDOW_IVAR: &str = "gpui_window_ptr";
 const KEY_REPEAT_DELAY: Duration = Duration::from_millis(500);
 const KEY_REPEAT_INTERVAL: Duration = Duration::from_millis(60);
+const POINTER_DEFAULT: u8 = 0;
+const POINTER_COLUMN_RESIZE: u8 = 1;
+const POINTER_ROW_RESIZE: u8 = 2;
+static POINTER_STYLE: AtomicU8 = AtomicU8::new(POINTER_DEFAULT);
+// iZed currently has one UIKit scene. The view retains this interaction.
+static POINTER_INTERACTION: AtomicPtr<AnyObject> = AtomicPtr::new(ptr::null_mut());
+
+/// Apply GPUI's cursor request to the iPad trackpad or mouse pointer.
+pub(crate) fn set_pointer_style(style: CursorStyle) {
+    let style = match style {
+        CursorStyle::ResizeLeft | CursorStyle::ResizeRight | CursorStyle::ResizeLeftRight => {
+            POINTER_COLUMN_RESIZE
+        }
+        CursorStyle::ResizeUp | CursorStyle::ResizeDown | CursorStyle::ResizeUpDown => {
+            POINTER_ROW_RESIZE
+        }
+        _ => POINTER_DEFAULT,
+    };
+    if POINTER_STYLE.swap(style, Ordering::Relaxed) == style {
+        return;
+    }
+    let interaction = POINTER_INTERACTION.load(Ordering::Acquire);
+    if !interaction.is_null() {
+        unsafe {
+            let _: () = msg_send![interaction, invalidate];
+        }
+    }
+}
 
 #[derive(Clone)]
 enum HardwareKeyAction {
@@ -312,7 +341,30 @@ fn register_metal_view_class() -> &'static AnyClass {
             handle_scroll(this, recognizer);
         }
 
+        extern "C" fn pointer_style_for_region(
+            _this: *mut AnyObject,
+            _sel: Sel,
+            _interaction: *mut AnyObject,
+            _region: *mut AnyObject,
+        ) -> *mut AnyObject {
+            // A vertical beam marks a divider that moves horizontally, and
+            // a horizontal beam marks one that moves vertically.
+            let (beam_axis, constrained_axis) = match POINTER_STYLE.load(Ordering::Relaxed) {
+                POINTER_COLUMN_RESIZE => (2_usize, 1_usize),
+                POINTER_ROW_RESIZE => (1_usize, 2_usize),
+                _ => return ptr::null_mut(),
+            };
+            unsafe {
+                let shape: *mut AnyObject =
+                    msg_send![class!(UIPointerShape), beamWithPreferredLength: 24.0_f64, axis: beam_axis];
+                msg_send![class!(UIPointerStyle), styleWithShape: shape, constrainedAxes: constrained_axis]
+            }
+        }
+
         unsafe {
+            if let Some(protocol) = objc2::runtime::AnyProtocol::get(c"UIPointerInteractionDelegate") {
+                decl.add_protocol(protocol);
+            }
             // Add class method for layerClass
             decl.add_class_method(
                 sel!(layerClass),
@@ -344,6 +396,11 @@ fn register_metal_view_class() -> &'static AnyClass {
             decl.add_method(
                 sel!(scrollChanged:),
                 scroll_changed as extern "C" fn(*mut AnyObject, Sel, *mut AnyObject),
+            );
+            decl.add_method(
+                sel!(pointerInteraction:styleForRegion:),
+                pointer_style_for_region
+                    as extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject) -> *mut AnyObject,
             );
         }
 
@@ -768,6 +825,8 @@ pub(crate) struct IosWindow {
     view_controller: *mut AnyObject,
     /// The Metal-backed UIView
     view: *mut AnyObject,
+    /// The view-owned interaction used to update the trackpad pointer.
+    pointer_interaction: *mut AnyObject,
     /// The hidden text input view for keyboard input
     text_input_view: *mut AnyObject,
     /// Current bounds in pixels
@@ -823,6 +882,17 @@ pub(crate) struct IosWindow {
 // Required for raw_window_handle
 unsafe impl Send for IosWindow {}
 unsafe impl Sync for IosWindow {}
+
+impl Drop for IosWindow {
+    fn drop(&mut self) {
+        let _ = POINTER_INTERACTION.compare_exchange(
+            self.pointer_interaction,
+            ptr::null_mut(),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+}
 
 impl IosWindow {
     fn handle_hover(&self, position: Point<Pixels>, hovered: bool) {
@@ -906,6 +976,12 @@ impl IosWindow {
             let _: () = msg_send![view, addGestureRecognizer: hover];
             let _: () = msg_send![hover, release];
 
+            let pointer: *mut AnyObject = msg_send![class!(UIPointerInteraction), alloc];
+            let pointer: *mut AnyObject = msg_send![pointer, initWithDelegate: view];
+            let _: () = msg_send![view, addInteraction: pointer];
+            POINTER_INTERACTION.store(pointer, Ordering::Release);
+            let _: () = msg_send![pointer, release];
+
             // Recognize two-finger trackpad scrolling and mouse-wheel scrolling.
             // Exclude direct touches so the existing finger gesture state machine
             // continues to handle scrolling, selection, and taps.
@@ -948,6 +1024,7 @@ impl IosWindow {
                 window,
                 view_controller,
                 view,
+                pointer_interaction: pointer,
                 text_input_view,
                 bounds: Cell::new(screen_bounds),
                 scale_factor: Cell::new(scale_factor),

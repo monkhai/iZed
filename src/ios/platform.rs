@@ -293,8 +293,8 @@ impl Platform for IosPlatform {
         Ok(app_path.join(name))
     }
 
-    fn set_cursor_style(&self, _style: CursorStyle) {
-        // iOS doesn't have visible cursors (except for Apple Pencil hover on iPad)
+    fn set_cursor_style(&self, style: CursorStyle) {
+        super::window::set_pointer_style(style);
     }
 
     fn should_auto_hide_scrollbars(&self) -> bool {

@@ -1976,6 +1976,18 @@ pub fn open(cx: &mut App) {
     AppState::set_global(app_state.clone(), cx);
 
     workspace::init(app_state.clone(), cx);
+    // The macOS keymap binds Command-Plus/Minus/Zero to these actions. Zed's
+    // desktop app registers their handlers in zed.rs, which the iPad host does
+    // not run, so install the in-memory editor zoom behavior here.
+    cx.on_action(|_: &zed_actions::IncreaseBufferFontSize, cx| {
+        theme_settings::increase_buffer_font_size(cx);
+    });
+    cx.on_action(|_: &zed_actions::DecreaseBufferFontSize, cx| {
+        theme_settings::decrease_buffer_font_size(cx);
+    });
+    cx.on_action(|_: &zed_actions::ResetBufferFontSize, cx| {
+        theme_settings::reset_buffer_font_size(cx);
+    });
     language_model::init(cx);
     client::RefreshLlmTokenListener::register(app_state.client.clone(), app_state.user_store.clone(), cx);
     language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
