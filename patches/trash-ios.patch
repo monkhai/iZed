@@ -1,0 +1,109 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index d9f0679..c711d4f 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -54,6 +54,104 @@ pub mod macos;
+ #[cfg(target_os = "macos")]
+ use macos as platform;
+ 
++// iOS has no public system Trash API. Keep trashed items in the app container
++// so the editor can restore them through its existing Undo action.
++#[cfg(target_os = "ios")]
++mod platform {
++    use super::{Error, PathBuf, TrashContext, TrashItem};
++    use std::fs;
++    use std::sync::atomic::{AtomicU64, Ordering};
++    use std::time::{SystemTime, UNIX_EPOCH};
++
++    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
++
++    fn trash_root() -> Result<PathBuf, Error> {
++        let home = std::env::var_os("HOME")
++            .ok_or_else(|| super::into_unknown("HOME is not set"))?;
++        let root = PathBuf::from(home).join("Library").join("iZed Trash");
++        fs::create_dir_all(&root).map_err(super::into_unknown)?;
++        Ok(root)
++    }
++
++    #[derive(Clone, Default, Debug)]
++    pub struct PlatformTrashContext;
++
++    impl PlatformTrashContext {
++        pub const fn new() -> Self { Self }
++    }
++
++    impl TrashContext {
++        pub(crate) fn delete_all_canonicalized(
++            &self,
++            full_paths: Vec<PathBuf>,
++            with_info: bool,
++        ) -> Result<Option<Vec<TrashItem>>, Error> {
++            let root = trash_root()?;
++            let mut items = Vec::with_capacity(full_paths.len());
++            for path in full_paths {
++                let parent = path.parent().ok_or(Error::TargetedRoot)?.to_path_buf();
++                let name = path.file_name().ok_or(Error::TargetedRoot)?.to_os_string();
++                fs::symlink_metadata(&path).map_err(super::into_unknown)?;
++                let deleted_at = SystemTime::now()
++                    .duration_since(UNIX_EPOCH)
++                    .map_err(super::into_unknown)?;
++
++                let slot = loop {
++                    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
++                    let timestamp = SystemTime::now()
++                        .duration_since(UNIX_EPOCH)
++                        .map_err(super::into_unknown)?;
++                    let slot = root.join(format!("{}-{}-{}", timestamp.as_nanos(), std::process::id(), id));
++                    match fs::create_dir(&slot) {
++                        Ok(()) => break slot,
++                        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
++                        Err(error) => return Err(super::into_unknown(error)),
++                    }
++                };
++                let stored = slot.join("item");
++                if let Err(error) = fs::rename(&path, &stored) {
++                    let _ = fs::remove_dir(&slot);
++                    return Err(super::into_unknown(error));
++                }
++                items.push(TrashItem {
++                    id: stored.into_os_string(),
++                    name,
++                    original_parent: parent,
++                    time_deleted: deleted_at.as_secs() as i64,
++                });
++            }
++            Ok(with_info.then_some(items))
++        }
++    }
++}
++
++#[cfg(target_os = "ios")]
++pub fn restore_all<I>(items: I) -> Result<(), Error>
++where
++    I: IntoIterator<Item = TrashItem>,
++{
++    use std::fs;
++    let items: Vec<_> = items.into_iter().collect();
++    if let Some(original) = items.iter().map(TrashItem::original_path)
++        .find(|path| fs::symlink_metadata(path).is_ok()) {
++        return Err(Error::RestoreCollision {
++            path: original,
++            remaining_items: items,
++        });
++    }
++    for item in items {
++        let stored = PathBuf::from(item.id.clone());
++        if fs::symlink_metadata(&stored).is_err() {
++            return Err(into_unknown(format!("Trashed item is missing: {}", stored.display())));
++        }
++        fs::rename(&stored, item.original_path()).map_err(into_unknown)?;
++        if let Some(slot) = stored.parent() {
++            let _ = fs::remove_dir(slot);
++        }
++    }
++    Ok(())
++}
++
+ pub const DEFAULT_TRASH_CTX: TrashContext = TrashContext::new();
+ 
+ /// A collection of preferences for trash operations.

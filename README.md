@@ -26,13 +26,14 @@ The terminal, debugger, AI panel, and full language-server experience are still 
 
 ## How it is built
 
-This repository combines an iOS GPUI platform layer with a small iPad host for Zed's workspace. It is based on [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) and uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The Zed source changes needed for iPad and SSH are kept in [`patches/zed-ios.patch`](patches/zed-ios.patch), rather than copying the full Zed repository here.
+This repository combines an iOS GPUI platform layer with a small iPad host for Zed's workspace. It is based on [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) and uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The source changes needed for iPad and SSH are kept in [`patches/zed-ios.patch`](patches/zed-ios.patch) and [`patches/trash-ios.patch`](patches/trash-ios.patch), rather than copying the full upstream repositories here.
 
 | Path | Purpose |
 | --- | --- |
 | [`example/src/editor_spike.rs`](example/src/editor_spike.rs) | Machine picker, SSH project flow, and Zed workspace host |
 | [`src/ios`](src/ios) | GPUI's iOS platform implementation |
 | [`patches/zed-ios.patch`](patches/zed-ios.patch) | Changes to the pinned Zed source |
+| [`patches/trash-ios.patch`](patches/trash-ios.patch) | iOS support for the Trash dependency |
 | [`scripts/prepare-zed.sh`](scripts/prepare-zed.sh) | Apply the patch and build macOS remote servers |
 | [`example/ios`](example/ios) | Xcode project specification, launch screen, and app assets |
 
@@ -48,7 +49,7 @@ This path is currently for macOS developers comfortable with Xcode, Rust, and SS
    ./scripts/prepare-zed.sh
    ```
 
-   This fetches Zed through Cargo, applies the iZed patch, and builds the two macOS remote-server archives. The first run takes a while. The generated archives stay in `example/ios/RemoteServers/` and are not committed.
+   This fetches Zed through Cargo, applies the iOS patches, and builds the two macOS remote-server archives. The first run takes a while. The generated archives stay in `example/ios/RemoteServers/` and are not committed.
 
 3. Generate and open the iOS project:
 
