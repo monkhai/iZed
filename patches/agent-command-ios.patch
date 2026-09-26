@@ -1,0 +1,781 @@
+diff --git a/crates/project/src/terminals.rs b/crates/project/src/terminals.rs
+index d97dde6..bccf4c2 100644
+--- a/crates/project/src/terminals.rs
++++ b/crates/project/src/terminals.rs
+@@ -25,6 +25,45 @@ pub struct Terminals {
+     pub(crate) local_handles: Vec<WeakEntity<terminal::Terminal>>,
+ }
+ 
++#[cfg(any(target_os = "ios", test))]
++fn use_ios_remote_command_route(is_ios: bool, has_remote_client: bool) -> bool {
++    is_ios && has_remote_client
++}
++
++#[cfg(any(target_os = "ios", test))]
++fn ensure_remote_command_connected(state: remote::ConnectionState) -> Result<()> {
++    anyhow::ensure!(
++        state == remote::ConnectionState::Connected,
++        "Machine is unavailable; command was not started"
++    );
++    Ok(())
++}
++
++#[cfg(test)]
++mod remote_command_tests {
++    use super::*;
++
++    #[test]
++    fn terminal_task_routes_only_ipad_remote_projects_to_ssh() {
++        assert!(use_ios_remote_command_route(true, true));
++        assert!(!use_ios_remote_command_route(true, false));
++        assert!(!use_ios_remote_command_route(false, true));
++    }
++
++    #[test]
++    fn unavailable_machine_never_starts_a_command() {
++        assert!(ensure_remote_command_connected(remote::ConnectionState::Connected).is_ok());
++        for state in [
++            remote::ConnectionState::Connecting,
++            remote::ConnectionState::HeartbeatMissed,
++            remote::ConnectionState::Reconnecting,
++            remote::ConnectionState::Disconnected,
++        ] {
++            assert!(ensure_remote_command_connected(state).is_err(), "{state:?}");
++        }
++    }
++}
++
+ impl Project {
+     pub fn active_entry_directory(&self, cx: &App) -> Option<PathBuf> {
+         let entry_id = self.active_entry()?;
+@@ -63,6 +102,10 @@ impl Project {
+         spawn_task: SpawnInTerminal,
+         cx: &mut Context<Self>,
+     ) -> Task<Result<Entity<Terminal>>> {
++        #[cfg(target_os = "ios")]
++        if use_ios_remote_command_route(true, self.remote_client.is_some()) {
++            return self.create_ios_remote_terminal_task(spawn_task, cx);
++        }
+         let is_via_remote = self.remote_client.is_some();
+ 
+         let path: Option<Arc<Path>> = if let Some(cwd) = &spawn_task.cwd {
+@@ -455,6 +498,81 @@ impl Project {
+         })
+     }
+ 
++    #[cfg(target_os = "ios")]
++    fn create_ios_remote_terminal_task(
++        &mut self,
++        spawn_task: SpawnInTerminal,
++        cx: &mut Context<Self>,
++    ) -> Task<Result<Entity<Terminal>>> {
++        use remote::RemoteConnectionOptions;
++        use terminal::RemoteTerminalChannels;
++
++        let Some(remote_client) = self.remote_client.as_ref() else {
++            return Task::ready(Err(anyhow::anyhow!("No Machine is connected")));
++        };
++        let remote_client = remote_client.read(cx);
++        if let Err(error) = ensure_remote_command_connected(remote_client.connection_state()) {
++            return Task::ready(Err(error));
++        }
++        let RemoteConnectionOptions::Ssh(options) = remote_client.connection_options() else {
++            return Task::ready(Err(anyhow::anyhow!(
++                "This Machine does not support SSH commands"
++            )));
++        };
++        let cwd = spawn_task
++            .cwd
++            .clone()
++            .or_else(|| self.active_project_directory(cx).map(|p| p.to_path_buf()));
++        let Some(cwd) = cwd else {
++            return Task::ready(Err(anyhow::anyhow!(
++                "No project directory is available for this command"
++            )));
++        };
++        if !cwd.is_absolute() || self.find_worktree(&cwd, cx).is_none() {
++            return Task::ready(Err(anyhow::anyhow!(
++                "Command directory is outside the connected project"
++            )));
++        }
++        let settings = TerminalSettings::get(None, cx).clone();
++        let mut env = settings.env.clone();
++        env.extend(spawn_task.env.clone());
++        let program = spawn_task.command.clone().unwrap_or_else(|| {
++            remote_client
++                .shell()
++                .unwrap_or_else(get_default_system_shell)
++        });
++        let args = spawn_task.args.clone();
++        let title = spawn_task.label.clone();
++        let window_id = cx.entity_id().as_u64();
++        let executor = cx.background_executor().clone();
++        let path_style = self.path_style(cx);
++
++        cx.spawn(async move |project, cx| {
++            let session = remote::open_ssh_command(options, program, args, env, Some(cwd)).await?;
++            let builder = TerminalBuilder::new_remote(
++                RemoteTerminalChannels {
++                    input_tx: session.terminal.input_tx,
++                    resize_tx: session.terminal.resize_tx,
++                    output_rx: session.terminal.output_rx,
++                    cancel_tx: Some(session.cancel_tx),
++                },
++                title,
++                settings.cursor_shape,
++                settings.alternate_scroll,
++                settings.max_scroll_history_lines,
++                window_id,
++                &executor,
++                path_style,
++            )?
++            .attach_remote_task(spawn_task, session.exit_rx);
++            project.update(cx, move |project, cx| {
++                let terminal = cx.new(|cx| builder.subscribe(cx));
++                project.terminals.local_handles.push(terminal.downgrade());
++                terminal
++            })
++        })
++    }
++
+     #[cfg(target_os = "ios")]
+     fn create_ios_remote_terminal_shell(
+         &mut self,
+@@ -470,7 +588,9 @@ impl Project {
+         let connection = remote_client.read(cx).connection_options();
+         let title = format!("{} — Terminal", connection.display_name());
+         let RemoteConnectionOptions::Ssh(options) = connection else {
+-            return Task::ready(Err(anyhow::anyhow!("Only SSH Machines support terminals on iPad")));
++            return Task::ready(Err(anyhow::anyhow!(
++                "Only SSH Machines support terminals on iPad"
++            )));
+         };
+         let settings = TerminalSettings::get(None, cx).clone();
+         let window_id = cx.entity_id().as_u64();
+@@ -484,6 +604,7 @@ impl Project {
+                     input_tx: session.input_tx,
+                     resize_tx: session.resize_tx,
+                     output_rx: session.output_rx,
++                    cancel_tx: None,
+                 },
+                 title,
+                 settings.cursor_shape,
+diff --git a/crates/remote/src/remote.rs b/crates/remote/src/remote.rs
+index 9353b5a..e1fb5d4 100644
+--- a/crates/remote/src/remote.rs
++++ b/crates/remote/src/remote.rs
+@@ -14,7 +14,7 @@ pub use remote_client::{
+ pub use transport::docker::DockerConnectionOptions;
+ pub use transport::ssh::{SshConnectionOptions, SshPortForwardOption};
+ #[cfg(target_os = "ios")]
+-pub use transport::ssh_ios::{SshHostIdentity, SshProcessSession, SshServerPhase, SshServerProgress, SshTerminalSession, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, open_ssh_process, open_ssh_terminal, probe_ssh_host, run_ssh_task, ssh_home_directory, trust_ssh_host};
++pub use transport::ssh_ios::{SshCommandSession, SshHostIdentity, SshProcessSession, SshServerPhase, SshServerProgress, SshTerminalSession, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, open_ssh_command, open_ssh_process, open_ssh_terminal, probe_ssh_host, run_ssh_task, ssh_home_directory, trust_ssh_host};
+ pub use transport::wsl::WslConnectionOptions;
+ #[cfg(target_os = "windows")]
+ pub use transport::wsl::wsl_path_to_windows_path;
+diff --git a/crates/remote/src/transport/ssh_ios.rs b/crates/remote/src/transport/ssh_ios.rs
+index f92bf41..69862a9 100644
+--- a/crates/remote/src/transport/ssh_ios.rs
++++ b/crates/remote/src/transport/ssh_ios.rs
+@@ -66,6 +66,185 @@ pub struct SshTerminalSession {
+     pub output_rx: SmolReceiver<Vec<u8>>,
+ }
+ 
++/// A finite command on the Machine. The exit receiver resolves after all output closes.
++pub struct SshCommandSession {
++    pub terminal: SshTerminalSession,
++    pub exit_rx: SmolReceiver<Option<u32>>,
++    pub cancel_tx: SmolSender<()>,
++}
++
++struct CancelCommandOnDrop(Option<SmolSender<()>>);
++
++impl Drop for CancelCommandOnDrop {
++    fn drop(&mut self) {
++        if let Some(cancel_tx) = self.0.take() {
++            cancel_tx.try_send(()).ok();
++        }
++    }
++}
++
++fn ssh_command_line(
++    program: &str,
++    arguments: &[String],
++    environment: &HashMap<String, String>,
++    working_directory: Option<&Path>,
++) -> Result<String> {
++    anyhow::ensure!(!program.is_empty(), "Remote command is empty");
++    let mut command = String::new();
++    if let Some(path) = working_directory {
++        anyhow::ensure!(
++            path.is_absolute(),
++            "Remote working directory must be absolute"
++        );
++        command.push_str("cd ");
++        command.push_str(&ssh_quote(&path.to_string_lossy()));
++        command.push_str(" && ");
++    }
++    command.push_str("exec env");
++    for (name, value) in environment {
++        anyhow::ensure!(
++            !name.is_empty()
++                && name.bytes().enumerate().all(|(i, c)| {
++                    c == b'_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit())
++                }),
++            "Invalid remote environment variable name: {name:?}"
++        );
++        command.push(' ');
++        command.push_str(&ssh_quote(&format!("{name}={value}")));
++    }
++    command.push(' ');
++    command.push_str(&ssh_quote(program));
++    for argument in arguments {
++        command.push(' ');
++        command.push_str(&ssh_quote(argument));
++    }
++    Ok(command)
++}
++
++pub async fn open_ssh_command(
++    options: SshConnectionOptions,
++    program: String,
++    arguments: Vec<String>,
++    environment: HashMap<String, String>,
++    working_directory: Option<PathBuf>,
++) -> Result<SshCommandSession> {
++    let command = ssh_command_line(
++        &program,
++        &arguments,
++        &environment,
++        working_directory.as_deref(),
++    )?;
++    let (input_tx, input_rx) = smol::channel::unbounded();
++    let (resize_tx, resize_rx) = smol::channel::unbounded();
++    let (output_tx, output_rx) = smol::channel::bounded(64);
++    let (exit_tx, exit_rx) = smol::channel::bounded(1);
++    let (cancel_tx, cancel_rx) = smol::channel::bounded(1);
++    let mut cancel_on_drop = CancelCommandOnDrop(Some(cancel_tx.clone()));
++    let (ready_tx, ready_rx) = smol::channel::bounded::<std::result::Result<(), String>>(1);
++
++    std::thread::Builder::new()
++        .name("ized-ssh-command".into())
++        .spawn(move || {
++            let result = run_ssh_terminal_command(
++                options,
++                command,
++                input_rx,
++                resize_rx,
++                cancel_rx,
++                output_tx.clone(),
++                ready_tx.clone(),
++            );
++            match result {
++                Ok(status) => {
++                    drop(output_tx);
++                    exit_tx.send_blocking(status).ok();
++                }
++                Err(error) => {
++                    let message = format!("{error:#}");
++                    if ready_tx.try_send(Err(message.clone())).is_err() {
++                        output_tx
++                            .send_blocking(format!("\r\n[SSH command: {message}]\r\n").into_bytes())
++                            .ok();
++                        drop(output_tx);
++                        exit_tx.send_blocking(None).ok();
++                    }
++                }
++            }
++        })?;
++    ready_rx
++        .recv()
++        .await
++        .context("SSH command stopped before opening")?
++        .map_err(anyhow::Error::msg)?;
++    cancel_on_drop.0 = None;
++    Ok(SshCommandSession {
++        terminal: SshTerminalSession {
++            input_tx,
++            resize_tx,
++            output_rx,
++        },
++        exit_rx,
++        cancel_tx,
++    })
++}
++
++fn run_ssh_terminal_command(
++    options: SshConnectionOptions,
++    command: String,
++    input_rx: SmolReceiver<Vec<u8>>,
++    resize_rx: SmolReceiver<(u32, u32)>,
++    cancel_rx: SmolReceiver<()>,
++    output_tx: SmolSender<Vec<u8>>,
++    ready_tx: SmolSender<std::result::Result<(), String>>,
++) -> Result<Option<u32>> {
++    let (runtime, handle) = connect_with_connection_timeout(&options, Duration::from_secs(15))?;
++    runtime.block_on(async move {
++        let mut channel = tokio::select! {
++            biased;
++            _ = cancel_rx.recv() => return Ok(None),
++            result = tokio::time::timeout(Duration::from_secs(15), async {
++                let channel = handle.channel_open_session().await?;
++                channel.request_pty(true, "xterm-256color", 80, 24, 0, 0, &[]).await?;
++                channel.exec(true, command).await?;
++                anyhow::Ok(channel)
++            }) => result.context("SSH command start timed out; it may have started, so do not retry automatically")??,
++        };
++        ready_tx.send(Ok(())).await.ok();
++        let mut exit_status = None;
++        let mut input_open = true;
++        let mut resize_open = true;
++        loop {
++            tokio::select! {
++                biased;
++                _ = cancel_rx.recv() => {
++                    // Never let a stalled network keep the tool's timeout waiting forever.
++                    tokio::time::timeout(Duration::from_secs(2), channel.data_bytes(vec![3])).await.ok();
++                    tokio::time::timeout(Duration::from_secs(2), channel.close()).await.ok();
++                    return Ok(None);
++                },
++                message = channel.wait() => match message {
++                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
++                        if output_tx.send(data.as_ref().to_vec()).await.is_err() { break; }
++                    }
++                    Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
++                    Some(_) => {},
++                    None => break,
++                },
++                input = input_rx.recv(), if input_open => match input {
++                    Ok(bytes) => channel.data_bytes(bytes).await?,
++                    Err(_) => input_open = false,
++                },
++                resize = resize_rx.recv(), if resize_open => match resize {
++                    Ok((columns, rows)) => channel.window_change(columns, rows, 0, 0).await?,
++                    Err(_) => resize_open = false,
++                },
++            }
++        }
++        anyhow::ensure!(exit_status.is_some(), "SSH connection closed before the command reported an exit status");
++        Ok(exit_status)
++    })
++}
++
+ /// A non-PTY process on the Machine, for protocols such as DAP that use stdio.
+ pub struct SshProcessSession {
+     pub input_tx: SmolSender<Vec<u8>>,
+@@ -168,6 +347,69 @@ fn ssh_quote(value: &str) -> String {
+     format!("'{}'", value.replace('\'', "'\\''"))
+ }
+ 
++#[cfg(test)]
++mod command_tests {
++    use super::*;
++
++    #[test]
++    fn dropped_start_request_cancels_before_execution() {
++        let (tx, rx) = smol::channel::bounded(1);
++        drop(CancelCommandOnDrop(Some(tx)));
++        assert!(rx.try_recv().is_ok());
++    }
++
++    #[test]
++    fn command_uses_absolute_project_root_and_quotes_arguments() {
++        let command = ssh_command_line(
++            "/bin/zsh",
++            &[
++                "-c".into(),
++                "cargo test --manifest-path interpreter/Cargo.toml".into(),
++            ],
++            &HashMap::from([("PAGER".into(), "".into())]),
++            Some(Path::new("/home/user/assembly-visualizer")),
++        )
++        .unwrap();
++        assert!(command.starts_with("cd '/home/user/assembly-visualizer' && exec env "));
++        assert!(command.contains("'cargo test --manifest-path interpreter/Cargo.toml'"));
++        assert!(command.contains("'PAGER='"));
++    }
++
++    #[test]
++    fn command_rejects_relative_directory_and_unsafe_env_name() {
++        assert!(
++            ssh_command_line(
++                "echo",
++                &[],
++                &HashMap::new(),
++                Some(Path::new("assembly-visualizer"))
++            )
++            .is_err()
++        );
++        assert!(
++            ssh_command_line(
++                "echo",
++                &[],
++                &HashMap::from([("BAD;COMMAND".into(), "x".into())]),
++                None
++            )
++            .is_err()
++        );
++    }
++
++    #[test]
++    fn command_quotes_shell_metacharacters_without_executing_them() {
++        let command = ssh_command_line(
++            "printf",
++            &["a'b; $(touch /tmp/never)".into()],
++            &HashMap::new(),
++            None,
++        )
++        .unwrap();
++        assert_eq!(command, "exec env 'printf' 'a'\\''b; $(touch /tmp/never)'");
++    }
++}
++
+ fn run_ssh_process(
+     options: SshConnectionOptions,
+     program: String,
+@@ -488,6 +730,21 @@ fn connect(
+ fn connect_with_inactivity_timeout(
+     options: &SshConnectionOptions,
+     inactivity_timeout: Option<Duration>,
++) -> Result<(tokio::runtime::Runtime, client::Handle<HostKeyVerifier>)> {
++    connect_with_timeouts(options, inactivity_timeout, None)
++}
++
++fn connect_with_connection_timeout(
++    options: &SshConnectionOptions,
++    connection_timeout: Duration,
++) -> Result<(tokio::runtime::Runtime, client::Handle<HostKeyVerifier>)> {
++    connect_with_timeouts(options, None, Some(connection_timeout))
++}
++
++fn connect_with_timeouts(
++    options: &SshConnectionOptions,
++    inactivity_timeout: Option<Duration>,
++    connection_timeout: Option<Duration>,
+ ) -> Result<(tokio::runtime::Runtime, client::Handle<HostKeyVerifier>)> {
+     let ssh_dir = ipad_ssh_dir()?;
+     let host = options.host.to_string();
+@@ -506,28 +763,38 @@ fn connect_with_inactivity_timeout(
+     let handle = runtime.block_on(async {
+         let config = Arc::new(client::Config {
+             inactivity_timeout,
++            keepalive_interval: connection_timeout.map(|_| Duration::from_secs(10)),
++            keepalive_max: 3,
+             ..Default::default()
+         });
+-        let mut handle = client::connect(
+-            config,
+-            (host.as_str(), port),
+-            HostKeyVerifier {
+-                expected_fingerprint,
+-            },
+-        )
+-        .await
+-        .with_context(|| format!("connect to {host}:{port}"))?;
+-        let authenticated = handle
+-            .authenticate_publickey(
+-                username.clone(),
+-                PrivateKeyWithHashAlg::new(Arc::new(key), None),
++        let connect = async {
++            let mut handle = client::connect(
++                config,
++                (host.as_str(), port),
++                HostKeyVerifier {
++                    expected_fingerprint,
++                },
+             )
+-            .await?
+-            .success();
+-        if !authenticated {
+-            bail!("SSH key authentication failed for {username}@{host}");
++            .await
++            .with_context(|| format!("connect to {host}:{port}"))?;
++            let authenticated = handle
++                .authenticate_publickey(
++                    username.clone(),
++                    PrivateKeyWithHashAlg::new(Arc::new(key), None),
++                )
++                .await?
++                .success();
++            if !authenticated {
++                bail!("SSH key authentication failed for {username}@{host}");
++            }
++            anyhow::Ok(handle)
++        };
++        match connection_timeout {
++            Some(limit) => tokio::time::timeout(limit, connect)
++                .await
++                .context("SSH connection timed out before the command started")?,
++            None => connect.await,
+         }
+-        anyhow::Ok(handle)
+     })?;
+     Ok((runtime, handle))
+ }
+diff --git a/crates/terminal/src/terminal.rs b/crates/terminal/src/terminal.rs
+index 20dea59..c5d143c 100644
+--- a/crates/terminal/src/terminal.rs
++++ b/crates/terminal/src/terminal.rs
+@@ -346,6 +346,7 @@ pub struct TerminalBuilder {
+     terminal: Terminal,
+     events_rx: UnboundedReceiver<AlacTermEvent>,
+     remote_output_rx: Option<Receiver<Vec<u8>>>,
++    remote_exit_rx: Option<Receiver<Option<u32>>>,
+ }
+ 
+ /// Channels for a PTY hosted outside this process, such as an iPad SSH session.
+@@ -353,6 +354,7 @@ pub struct RemoteTerminalChannels {
+     pub input_tx: Sender<Vec<u8>>,
+     pub resize_tx: Sender<(u32, u32)>,
+     pub output_rx: Receiver<Vec<u8>>,
++    pub cancel_tx: Option<Sender<()>>,
+ }
+ 
+ impl TerminalBuilder {
+@@ -437,6 +439,7 @@ impl TerminalBuilder {
+             terminal,
+             events_rx,
+             remote_output_rx: None,
++            remote_exit_rx: None,
+         })
+     }
+ 
+@@ -461,6 +464,7 @@ impl TerminalBuilder {
+         builder.terminal.terminal_type = TerminalType::Remote {
+             input_tx: channels.input_tx,
+             resize_tx: channels.resize_tx,
++            cancel_tx: channels.cancel_tx,
+         };
+         builder.terminal.title_override = Some(title);
+         builder.terminal.is_remote_terminal = true;
+@@ -468,6 +472,22 @@ impl TerminalBuilder {
+         Ok(builder)
+     }
+ 
++    pub fn attach_remote_task(
++        mut self,
++        spawned_task: SpawnInTerminal,
++        exit_rx: Receiver<Option<u32>>,
++    ) -> Self {
++        let (completion_tx, completion_rx) = smol::channel::bounded(1);
++        self.terminal.task = Some(TaskState {
++            spawned_task,
++            status: TaskStatus::Running,
++            completion_rx,
++        });
++        self.terminal.completion_tx = Some(completion_tx);
++        self.remote_exit_rx = Some(exit_rx);
++        self
++    }
++
+     pub fn new(
+         working_directory: Option<PathBuf>,
+         task: Option<TaskState>,
+@@ -721,6 +741,7 @@ impl TerminalBuilder {
+                 terminal,
+                 events_rx,
+                 remote_output_rx: None,
++                remote_exit_rx: None,
+             })
+         };
+         // the thread we spawn things on has an effect on signal handling
+@@ -733,10 +754,20 @@ impl TerminalBuilder {
+ 
+     pub fn subscribe(mut self, cx: &Context<Terminal>) -> Terminal {
+         if let Some(output_rx) = self.remote_output_rx.take() {
++            let exit_rx = self.remote_exit_rx.take();
+             cx.spawn(async move |terminal, cx| {
+                 while let Ok(bytes) = output_rx.recv().await {
+                     terminal.update(cx, |terminal, cx| terminal.write_pty_output(&bytes, cx))?;
+                 }
++                if let Some(exit_rx) = exit_rx {
++                    let status = exit_rx.recv().await.ok().flatten();
++                    terminal.update(cx, |terminal, cx| {
++                        terminal.register_task_finished(
++                            status.map(|code| ((code.min(255)) as i32) << 8),
++                            cx,
++                        );
++                    })?;
++                }
+                 anyhow::Ok(())
+             })
+             .detach();
+@@ -896,6 +927,7 @@ enum TerminalType {
+     Remote {
+         input_tx: Sender<Vec<u8>>,
+         resize_tx: Sender<(u32, u32)>,
++        cancel_tx: Option<Sender<()>>,
+     },
+     DisplayOnly,
+ }
+@@ -1087,7 +1119,10 @@ impl Terminal {
+                     pty_tx.0.send(Msg::Resize(new_bounds.into())).ok();
+                 } else if let TerminalType::Remote { resize_tx, .. } = &self.terminal_type {
+                     resize_tx
+-                        .try_send((new_bounds.num_columns() as u32, new_bounds.num_lines() as u32))
++                        .try_send((
++                            new_bounds.num_columns() as u32,
++                            new_bounds.num_lines() as u32,
++                        ))
+                         .ok();
+                 }
+ 
+@@ -1517,14 +1552,14 @@ impl Terminal {
+         let input = input.into();
+         match &self.terminal_type {
+             TerminalType::Pty { pty_tx, .. } => {
+-            if log::log_enabled!(log::Level::Debug) {
+-                if let Ok(str) = str::from_utf8(&input) {
+-                    log::debug!("Writing to PTY: {:?}", str);
+-                } else {
+-                    log::debug!("Writing to PTY: {:?}", input);
++                if log::log_enabled!(log::Level::Debug) {
++                    if let Ok(str) = str::from_utf8(&input) {
++                        log::debug!("Writing to PTY: {:?}", str);
++                    } else {
++                        log::debug!("Writing to PTY: {:?}", input);
++                    }
+                 }
+-            }
+-            pty_tx.notify(input);
++                pty_tx.notify(input);
+             }
+             TerminalType::Remote { input_tx, .. } => {
+                 input_tx.try_send(input.into_owned()).ok();
+@@ -2252,7 +2287,9 @@ impl Terminal {
+                             format!("{process_file} — {process_name}")
+                         })
+                         .unwrap_or_else(|| "Terminal".to_string()),
+-                    TerminalType::Remote { .. } | TerminalType::DisplayOnly => "Terminal".to_string(),
++                    TerminalType::Remote { .. } | TerminalType::DisplayOnly => {
++                        "Terminal".to_string()
++                    }
+                 }),
+         }
+     }
+@@ -2261,12 +2298,18 @@ impl Terminal {
+         if let Some(task) = self.task()
+             && task.status == TaskStatus::Running
+         {
+-            if let TerminalType::Pty { info, .. } = &self.terminal_type {
+-                // First kill the foreground process group (the command running in the shell)
+-                info.kill_current_process();
+-                // Then kill the shell itself so that the terminal exits properly
+-                // and wait_for_completed_task can complete
+-                info.kill_child_process();
++            match &self.terminal_type {
++                TerminalType::Pty { info, .. } => {
++                    info.kill_current_process();
++                    info.kill_child_process();
++                }
++                TerminalType::Remote {
++                    cancel_tx: Some(tx),
++                    ..
++                } => {
++                    tx.try_send(()).ok();
++                }
++                _ => {}
+             }
+         }
+     }
+@@ -2493,6 +2536,13 @@ unsafe fn append_text_to_term(term: &mut Term<ZedListener>, text_lines: &[&str])
+ 
+ impl Drop for Terminal {
+     fn drop(&mut self) {
++        if let TerminalType::Remote {
++            cancel_tx: Some(tx),
++            ..
++        } = &self.terminal_type
++        {
++            tx.try_send(()).ok();
++        }
+         if let TerminalType::Pty { pty_tx, info } =
+             std::mem::replace(&mut self.terminal_type, TerminalType::DisplayOnly)
+         {
+@@ -3418,6 +3468,86 @@ mod tests {
+         );
+     }
+ 
++    #[gpui::test]
++    async fn test_remote_task_delivers_output_and_nonzero_exit(cx: &mut TestAppContext) {
++        cx.executor().allow_parking();
++        let (input_tx, _) = smol::channel::unbounded();
++        let (resize_tx, _) = smol::channel::unbounded();
++        let (output_tx, output_rx) = smol::channel::unbounded();
++        let (exit_tx, exit_rx) = smol::channel::bounded(1);
++        let (cancel_tx, _) = smol::channel::bounded(1);
++        let terminal = cx.new(|cx| {
++            TerminalBuilder::new_remote(
++                RemoteTerminalChannels {
++                    input_tx,
++                    resize_tx,
++                    output_rx,
++                    cancel_tx: Some(cancel_tx),
++                },
++                "Remote command".into(),
++                CursorShape::default(),
++                AlternateScroll::On,
++                None,
++                0,
++                cx.background_executor(),
++                PathStyle::local(),
++            )
++            .unwrap()
++            .attach_remote_task(SpawnInTerminal::default(), exit_rx)
++            .subscribe(cx)
++        });
++        output_tx
++            .send(b"stdout\r\nstderr\r\n".to_vec())
++            .await
++            .unwrap();
++        drop(output_tx);
++        exit_tx.send(Some(7)).await.unwrap();
++        let status = terminal
++            .update(cx, |terminal, cx| terminal.wait_for_completed_task(cx))
++            .await;
++        assert_eq!(status.and_then(|status| status.code()), Some(7));
++        let content = terminal.update(cx, |terminal, _| terminal.get_content());
++        assert!(content.contains("stdout") && content.contains("stderr"));
++    }
++
++    #[gpui::test]
++    async fn test_remote_task_cancel_completes_without_exit_status(cx: &mut TestAppContext) {
++        cx.executor().allow_parking();
++        let (input_tx, _) = smol::channel::unbounded();
++        let (resize_tx, _) = smol::channel::unbounded();
++        let (output_tx, output_rx) = smol::channel::unbounded();
++        let (exit_tx, exit_rx) = smol::channel::bounded(1);
++        let (cancel_tx, cancel_rx) = smol::channel::bounded(1);
++        let terminal = cx.new(|cx| {
++            TerminalBuilder::new_remote(
++                RemoteTerminalChannels {
++                    input_tx,
++                    resize_tx,
++                    output_rx,
++                    cancel_tx: Some(cancel_tx),
++                },
++                "Remote command".into(),
++                CursorShape::default(),
++                AlternateScroll::On,
++                None,
++                0,
++                cx.background_executor(),
++                PathStyle::local(),
++            )
++            .unwrap()
++            .attach_remote_task(SpawnInTerminal::default(), exit_rx)
++            .subscribe(cx)
++        });
++        terminal.update(cx, |terminal, _| terminal.kill_active_task());
++        cancel_rx.recv().await.unwrap();
++        drop(output_tx);
++        exit_tx.send(None).await.unwrap();
++        let status = terminal
++            .update(cx, |terminal, cx| terminal.wait_for_completed_task(cx))
++            .await;
++        assert!(status.is_none());
++    }
++
+     mod perf {
+         use super::super::*;
+         use gpui::{

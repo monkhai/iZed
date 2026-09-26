@@ -52,10 +52,16 @@ static POINTER_INTERACTION: AtomicPtr<AnyObject> = AtomicPtr::new(ptr::null_mut(
 /// Apply GPUI's cursor request to the iPad trackpad or mouse pointer.
 pub(crate) fn set_pointer_style(style: CursorStyle) {
     let style = match style {
-        CursorStyle::ResizeLeft | CursorStyle::ResizeRight | CursorStyle::ResizeLeftRight => {
+        CursorStyle::ResizeLeft
+        | CursorStyle::ResizeRight
+        | CursorStyle::ResizeLeftRight
+        | CursorStyle::ResizeColumn => {
             POINTER_COLUMN_RESIZE
         }
-        CursorStyle::ResizeUp | CursorStyle::ResizeDown | CursorStyle::ResizeUpDown => {
+        CursorStyle::ResizeUp
+        | CursorStyle::ResizeDown
+        | CursorStyle::ResizeUpDown
+        | CursorStyle::ResizeRow => {
             POINTER_ROW_RESIZE
         }
         _ => POINTER_DEFAULT,
@@ -349,15 +355,16 @@ fn register_metal_view_class() -> &'static AnyClass {
         ) -> *mut AnyObject {
             // A vertical beam marks a divider that moves horizontally, and
             // a horizontal beam marks one that moves vertically.
-            let (beam_axis, constrained_axis) = match POINTER_STYLE.load(Ordering::Relaxed) {
-                POINTER_COLUMN_RESIZE => (2_usize, 1_usize),
-                POINTER_ROW_RESIZE => (1_usize, 2_usize),
+            let beam_axis = match POINTER_STYLE.load(Ordering::Relaxed) {
+                POINTER_COLUMN_RESIZE => 2_usize,
+                POINTER_ROW_RESIZE => 1_usize,
                 _ => return ptr::null_mut(),
             };
             unsafe {
                 let shape: *mut AnyObject =
                     msg_send![class!(UIPointerShape), beamWithPreferredLength: 24.0_f64, axis: beam_axis];
-                msg_send![class!(UIPointerStyle), styleWithShape: shape, constrainedAxes: constrained_axis]
+                // Constraining an axis recenters the pointer when the drag ends.
+                msg_send![class!(UIPointerStyle), styleWithShape: shape, constrainedAxes: 0_usize]
             }
         }
 

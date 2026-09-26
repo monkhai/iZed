@@ -1,0 +1,60 @@
+diff --git a/crates/workspace/src/dock.rs b/crates/workspace/src/dock.rs
+index 849a85dd..8738d626 100644
+--- a/crates/workspace/src/dock.rs
++++ b/crates/workspace/src/dock.rs
+@@ -1042,6 +1042,9 @@ impl Render for Dock {
+             let create_resize_handle = || {
+                 let handle = div()
+                     .id("resize-handle")
++                    .when(cfg!(target_os = "ios"), |handle| {
++                        handle.hover(|style| style.bg(cx.theme().colors().text_muted))
++                    })
+                     .on_drag(DraggedDock(position), |dock, _, _, cx| {
+                         cx.stop_propagation();
+                         cx.new(|_| dock.clone())
+diff --git a/crates/workspace/src/pane_group.rs b/crates/workspace/src/pane_group.rs
+index c5f78eef..e47f9f63 100644
+--- a/crates/workspace/src/pane_group.rs
++++ b/crates/workspace/src/pane_group.rs
+@@ -1493,10 +1493,39 @@ mod element {
+                         window.set_cursor_style(cursor_style, &handle.hitbox);
+                     }
+ 
++                    let divider_hovered = cfg!(target_os = "ios")
++                        && (handle.hitbox.is_hovered(window)
++                            || layout.dragged_handle.borrow().as_ref() == Some(&ix));
++                    let divider_bounds = if divider_hovered {
++                        Bounds {
++                            origin: handle
++                                .divider_bounds
++                                .origin
++                                .apply_along(self.axis, |value| value - px(0.5)),
++                            size: handle
++                                .divider_bounds
++                                .size
++                                .apply_along(self.axis, |_| px(2.0)),
++                        }
++                    } else {
++                        handle.divider_bounds
++                    };
+                     window.paint_quad(gpui::fill(
+-                        handle.divider_bounds,
+-                        cx.theme().colors().pane_group_border,
++                        divider_bounds,
++                        if divider_hovered {
++                            cx.theme().colors().text_muted
++                        } else {
++                            cx.theme().colors().pane_group_border
++                        },
+                     ));
++                    if cfg!(target_os = "ios") {
++                        let hitbox = handle.hitbox.clone();
++                        window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, _| {
++                            if phase.bubble() && hitbox.is_hovered(window) != divider_hovered {
++                                window.refresh();
++                            }
++                        });
++                    }
+ 
+                     window.on_mouse_event({
+                         let dragged_handle = layout.dragged_handle.clone();
