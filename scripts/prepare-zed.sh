@@ -12,8 +12,9 @@ status_bar_patch="$repo_root/patches/status-bar-ios.patch"
 performance_patch="$repo_root/patches/performance-ios.patch"
 agent_command_patch="$repo_root/patches/agent-command-ios.patch"
 pane_hover_patch="$repo_root/patches/pane-hover-ios.patch"
+agent_drafts_patch="$repo_root/patches/agent-drafts-ios.patch"
 trash_patch="$repo_root/patches/trash-ios.patch"
-zed_patches=("$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patch" "$chatgpt_patch" "$status_bar_patch" "$performance_patch" "$agent_command_patch" "$pane_hover_patch")
+zed_patches=("$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patch" "$chatgpt_patch" "$status_bar_patch" "$performance_patch" "$agent_command_patch" "$pane_hover_patch" "$agent_drafts_patch")
 expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
 source_paths="$(

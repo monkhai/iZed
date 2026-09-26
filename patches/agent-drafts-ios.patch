@@ -1,0 +1,87 @@
+diff --git a/crates/agent_ui/src/agent_panel.rs b/crates/agent_ui/src/agent_panel.rs
+index edbc15af..81f5dca4 100644
+--- a/crates/agent_ui/src/agent_panel.rs
++++ b/crates/agent_ui/src/agent_panel.rs
+@@ -1364,12 +1364,33 @@ impl AgentPanel {
+         self.activate_retained_thread(id, true, window, cx);
+     }
+ 
++    fn is_empty_draft(conversation_view: &Entity<ConversationView>, cx: &App) -> bool {
++        let conversation_view = conversation_view.read(cx);
++        let Some(thread_view) = conversation_view.root_thread(cx) else {
++            return conversation_view.is_new_draft();
++        };
++        let thread_view = thread_view.read(cx);
++        thread_view.is_draft(cx)
++            && thread_view.message_editor.read(cx).text(cx).trim().is_empty()
++            && thread_view
++                .thread
++                .read(cx)
++                .draft_prompt()
++                .is_none_or(|blocks| blocks.is_empty())
++    }
++
+     pub fn create_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) -> ThreadId {
+         let agent = if self.project.read(cx).is_via_collab() {
+             Agent::NativeAgent
+         } else {
+             self.selected_agent.clone()
+         };
++        if let BaseView::AgentThread { conversation_view } = &self.base_view
++            && *conversation_view.read(cx).agent_key() == agent
++            && Self::is_empty_draft(conversation_view, cx)
++        {
++            return conversation_view.read(cx).thread_id;
++        }
+         let thread = self.create_agent_thread(agent, None, None, None, None, window, cx);
+         let thread_id = thread.conversation_view.read(cx).thread_id;
+         self.retained_threads
+@@ -1384,6 +1405,12 @@ impl AgentPanel {
+         window: &mut Window,
+         cx: &mut Context<Self>,
+     ) {
++        if self.active_thread_id(cx) == Some(id) {
++            if focus {
++                self.focus_handle(cx).focus(window, cx);
++            }
++            return;
++        }
+         let Some(conversation_view) = self.retained_threads.remove(&id) else {
+             return;
+         };
+@@ -2175,6 +2202,15 @@ impl AgentPanel {
+ 
+         let thread_id = conversation_view.read(cx).thread_id;
+ 
++        // An untouched new-thread view is disposable. Keep a draft only when
++        // it contains a prompt or conversation worth returning to.
++        if Self::is_empty_draft(&conversation_view, cx) {
++            ThreadMetadataStore::global(cx).update(cx, |store, cx| {
++                store.delete(thread_id, cx);
++            });
++            return;
++        }
++
+         if self.retained_threads.contains_key(&thread_id) {
+             return;
+         }
+@@ -7269,11 +7305,17 @@ mod tests {
+             panel.selected_agent = custom_agent.clone();
+         });
+ 
+-        // Call new_thread, which internally calls external_thread(None, ...)
+-        // This resolves the agent from self.selected_agent
++        // Creating another empty thread reuses the current draft.
+         panel.update_in(cx, |panel, window, cx| {
+             panel.new_thread(&NewThread, window, cx);
+         });
++        let first_id = panel.read_with(cx, |panel, cx| panel.active_thread_id(cx).unwrap());
++        panel.update_in(cx, |panel, window, cx| {
++            panel.new_thread(&NewThread, window, cx);
++        });
++        panel.read_with(cx, |panel, cx| {
++            assert_eq!(panel.active_thread_id(cx), Some(first_id));
++        });
+ 
+         panel.read_with(cx, |panel, _cx| {
+             assert_eq!(
