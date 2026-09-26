@@ -1,0 +1,160 @@
+diff --git a/crates/workspace/src/dock.rs b/crates/workspace/src/dock.rs
+index 81e46b513b..849a85dd0d 100644
+--- a/crates/workspace/src/dock.rs
++++ b/crates/workspace/src/dock.rs
+@@ -713,7 +713,9 @@ impl Dock {
+ 
+         self.restore_state(window, cx);
+ 
+-        if panel.read(cx).starts_open(window, cx) {
++        if (!cfg!(target_os = "ios") || self.serialized_dock.is_none())
++            && panel.read(cx).starts_open(window, cx)
++        {
+             self.activate_panel(index, window, cx);
+             self.set_open(true, window, cx);
+         }
+@@ -1324,6 +1326,16 @@ impl Render for PanelButtons {
+         }
+ 
+         let has_buttons = !buttons.is_empty();
++        let divider_color = cx.theme().colors().border;
++        let divider = || {
++            if cfg!(target_os = "ios") {
++                div().w_px().h(px(20.)).bg(divider_color).into_any_element()
++            } else {
++                Divider::vertical()
++                    .color(DividerColor::Border)
++                    .into_any_element()
++            }
++        };
+ 
+         h_flex()
+             .gap_1()
+@@ -1331,11 +1343,11 @@ impl Render for PanelButtons {
+                 has_buttons
+                     && (dock.position == DockPosition::Bottom
+                         || dock.position == DockPosition::Right),
+-                |this| this.child(Divider::vertical().color(DividerColor::Border)),
++                |this| this.child(divider()),
+             )
+             .children(buttons)
+             .when(has_buttons && dock.position == DockPosition::Left, |this| {
+-                this.child(Divider::vertical().color(DividerColor::Border))
++                this.child(divider())
+             })
+     }
+ }
+diff --git a/crates/sidebar/src/sidebar.rs b/crates/sidebar/src/sidebar.rs
+index b1ae810945..52d5d9d068 100644
+--- a/crates/sidebar/src/sidebar.rs
++++ b/crates/sidebar/src/sidebar.rs
+@@ -4628,6 +4628,9 @@ impl Sidebar {
+ 
+         h_flex()
+             .p_1()
++            .when(cfg!(target_os = "ios"), |el| {
++                el.pt(px(8.)).pb(px(14.)).px(px(14.))
++            })
+             .gap_1()
+             .when(on_right, |this| this.flex_row_reverse())
+             .justify_between()
+diff --git a/crates/workspace/src/status_bar.rs b/crates/workspace/src/status_bar.rs
+index dad5389f2f..e6d8218856 100644
+--- a/crates/workspace/src/status_bar.rs
++++ b/crates/workspace/src/status_bar.rs
+@@ -76,6 +76,10 @@ impl Render for StatusBar {
+             .justify_between()
+             .gap(DynamicSpacing::Base08.rems(cx))
+             .p(DynamicSpacing::Base04.rems(cx))
++            // Keep controls clear of the iPadOS resize edges without enlarging the bar.
++            .when(cfg!(target_os = "ios"), |el| {
++                el.pt(px(8.)).pb(px(14.)).px(px(14.))
++            })
+             .bg(cx.theme().colors().status_bar_background)
+             .map(|el| match window.window_decorations() {
+                 Decorations::Server => el,
+@@ -111,7 +115,9 @@ impl StatusBar {
+             .min_w_0()
+             .overflow_x_hidden()
+             .when(
+-                sidebar.show_toggle && !sidebar.open && sidebar.side == SidebarSide::Left,
++                sidebar.show_toggle
++                    && (cfg!(target_os = "ios") || !sidebar.open)
++                    && sidebar.side == SidebarSide::Left,
+                 |this| this.child(self.render_sidebar_toggle(sidebar, cx)),
+             )
+             .children(self.left_items.iter().map(|item| item.to_any()))
+@@ -128,7 +134,9 @@ impl StatusBar {
+             .overflow_x_hidden()
+             .children(self.right_items.iter().rev().map(|item| item.to_any()))
+             .when(
+-                sidebar.show_toggle && !sidebar.open && sidebar.side == SidebarSide::Right,
++                sidebar.show_toggle
++                    && (cfg!(target_os = "ios") || !sidebar.open)
++                    && sidebar.side == SidebarSide::Right,
+                 |this| this.child(self.render_sidebar_toggle(sidebar, cx)),
+             )
+     }
+@@ -139,8 +147,19 @@ impl StatusBar {
+         cx: &mut Context<Self>,
+     ) -> impl IntoElement {
+         let on_right = sidebar.side == SidebarSide::Right;
++        let is_open = sidebar.open;
+         let has_notifications = sidebar.has_notifications;
+         let indicator_border = cx.theme().colors().status_bar_background;
++        let divider_color = cx.theme().colors().border;
++        let divider = || {
++            if cfg!(target_os = "ios") {
++                div().w_px().h(px(20.)).bg(divider_color).into_any_element()
++            } else {
++                Divider::vertical()
++                    .color(ui::DividerColor::Border)
++                    .into_any_element()
++            }
++        };
+ 
+         let toggle = sidebar_side_context_menu("sidebar-status-toggle-menu", cx)
+             .anchor(if on_right {
+@@ -156,10 +175,11 @@ impl StatusBar {
+             .trigger(move |_is_active, _window, _cx| {
+                 IconButton::new(
+                     "toggle-workspace-sidebar",
+-                    if on_right {
+-                        IconName::ThreadsSidebarRightClosed
+-                    } else {
+-                        IconName::ThreadsSidebarLeftClosed
++                    match (on_right, is_open) {
++                        (true, true) => IconName::ThreadsSidebarRightOpen,
++                        (true, false) => IconName::ThreadsSidebarRightClosed,
++                        (false, true) => IconName::ThreadsSidebarLeftOpen,
++                        (false, false) => IconName::ThreadsSidebarLeftClosed,
+                     },
+                 )
+                 .icon_size(IconSize::Small)
+@@ -168,7 +188,11 @@ impl StatusBar {
+                         .indicator_border_color(Some(indicator_border))
+                 })
+                 .tooltip(move |_, cx| {
+-                    Tooltip::for_action("Open Threads Sidebar", &ToggleWorkspaceSidebar, cx)
++                    Tooltip::for_action(
++                        if is_open { "Close Threads Sidebar" } else { "Open Threads Sidebar" },
++                        &ToggleWorkspaceSidebar,
++                        cx,
++                    )
+                 })
+                 .on_click(move |_, window, cx| {
+                     if let Some(multi_workspace) = window.root::<MultiWorkspace>().flatten() {
+@@ -182,11 +206,11 @@ impl StatusBar {
+         h_flex()
+             .gap_0p5()
+             .when(on_right, |this| {
+-                this.child(Divider::vertical().color(ui::DividerColor::Border))
++                this.child(divider())
+             })
+             .child(toggle)
+             .when(!on_right, |this| {
+-                this.child(Divider::vertical().color(ui::DividerColor::Border))
++                this.child(divider())
+             })
+     }
+ }

@@ -8,6 +8,8 @@ terminal_patch="$repo_root/patches/terminal-ios.patch"
 debugger_patch="$repo_root/patches/debugger-ios.patch"
 ai_patch="$repo_root/patches/ai-ios.patch"
 chatgpt_patch="$repo_root/patches/chatgpt-ios.patch"
+status_bar_patch="$repo_root/patches/status-bar-ios.patch"
+performance_patch="$repo_root/patches/performance-ios.patch"
 trash_patch="$repo_root/patches/trash-ios.patch"
 expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
@@ -28,7 +30,7 @@ if [[ "$(git -C "$zed_source" rev-parse HEAD)" != "$expected_revision" ]]; then
     exit 1
 fi
 
-for zed_patch in "$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patch" "$chatgpt_patch"; do
+for zed_patch in "$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patch" "$chatgpt_patch" "$status_bar_patch" "$performance_patch"; do
     if git -C "$zed_source" apply --reverse --check "$zed_patch" 2>/dev/null; then
         echo "$(basename "$zed_patch") is already applied."
     else

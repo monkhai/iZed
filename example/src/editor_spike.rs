@@ -4,17 +4,51 @@ use std::{borrow::Cow, cell::RefCell, collections::HashMap, path::{Path, PathBuf
 
 use futures::channel::oneshot;
 use gpui::{
-    actions, Animation, AnimationExt, App, AppContext, AsyncApp, ClipboardItem, Context, DismissEvent, Entity, EventEmitter, FocusHandle,
-    Focusable, KeyBinding, Render, SharedString, Task, UpdateGlobal, Window, WindowHandle,
-    WindowOptions,
+    actions, Animation, AnimationExt, App, AppContext, AsyncApp, ClipboardItem, Context, DismissEvent, Empty, Entity, EventEmitter, FocusHandle,
+    Focusable, KeyBinding, Render, SharedString, Subscription, Task, UpdateGlobal, Window, WindowHandle,
+    WeakEntity, WindowOptions,
 };
 use project::trusted_worktrees::{self, PathTrust, TrustedWorktrees};
-use remote::{RemoteClientDelegate, RemoteConnectionOptions, RemotePlatform, SshConnectionOptions};
+use remote::{ConnectionState, RemoteClient, RemoteClientDelegate, RemoteConnectionOptions, RemotePlatform, SshConnectionOptions};
 use serde::{Deserialize, Serialize};
 use theme::{ActiveTheme, GlobalTheme};
 use ui::prelude::*;
 use ui::CommonAnimationExt;
+use util::path_list::PathList;
 use workspace::{AppState, MultiWorkspace, Workspace};
+
+struct SshConnectionStatus {
+    client: Entity<RemoteClient>,
+    _subscription: Subscription,
+}
+
+impl SshConnectionStatus {
+    fn new(client: Entity<RemoteClient>, cx: &mut Context<Self>) -> Self {
+        let subscription = cx.observe(&client, |_, _, cx| cx.notify());
+        Self { client, _subscription: subscription }
+    }
+}
+
+impl Render for SshConnectionStatus {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let message = match self.client.read(cx).connection_state() {
+            ConnectionState::Connected => return Empty.into_any_element(),
+            ConnectionState::Connecting | ConnectionState::Reconnecting => "Reconnecting to Machine…",
+            ConnectionState::HeartbeatMissed => "Connection interrupted…",
+            ConnectionState::Disconnected => "Machine disconnected",
+        };
+        Label::new(message).into_any_element()
+    }
+}
+
+impl workspace::StatusItemView for SshConnectionStatus {
+    fn set_active_pane_item(
+        &mut self,
+        _item: Option<&dyn workspace::ItemHandle>,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {}
+}
 
 fn ipad_picker_button(
     id: &'static str,
@@ -64,6 +98,8 @@ struct SshMachine {
 struct MachineStore {
     machines: Vec<SshMachine>,
     selected_address: Option<String>,
+    #[serde(default)]
+    browse_paths: HashMap<String, String>,
 }
 
 impl MachineStore {
@@ -86,6 +122,7 @@ impl MachineStore {
                     name: "Imported Machine".into(),
                     address: target.address,
                 }],
+                browse_paths: HashMap::new(),
             }
         } else {
             Self::default()
@@ -147,6 +184,13 @@ impl SshTarget {
         Ok(())
     }
 
+    fn same_project(&self, other: &Self) -> bool {
+        self.address == other.address
+            && Path::new(&self.folder)
+                .components()
+                .eq(Path::new(&other.folder).components())
+    }
+
     fn connection_options(&self) -> anyhow::Result<SshConnectionOptions> {
         let options = SshConnectionOptions::parse_command_line(&self.address)?;
         anyhow::ensure!(!options.host.to_string().is_empty(), "Enter an SSH host");
@@ -205,6 +249,7 @@ fn cache_directories(key: DirectoryCacheKey, paths: Vec<String>) {
 
 enum DirectoryBrowserEvent {
     Open(SshTarget),
+    Navigated(SshTarget),
     Back,
 }
 
@@ -219,6 +264,7 @@ struct SshTargetModal {
     loading_suggestions: bool,
     suggestions_loaded: bool,
     selected_suggestion: Option<usize>,
+    opening_folder: Option<String>,
     suggestion_scroll: gpui::ScrollHandle,
     folder_focused: bool,
     remote_home: Option<(String, String)>,
@@ -285,6 +331,7 @@ impl SshTargetModal {
             loading_suggestions: false,
             suggestions_loaded: false,
             selected_suggestion: None,
+            opening_folder: None,
             suggestion_scroll: gpui::ScrollHandle::new(),
             folder_focused: false,
             remote_home: None,
@@ -394,6 +441,12 @@ impl SshTargetModal {
             }
             if fresh {
                 self.loading_suggestions = false;
+                if self.embedded && typed_path.ends_with('/') {
+                    cx.emit(DirectoryBrowserEvent::Navigated(SshTarget {
+                        address: cache_key.0.clone(),
+                        folder: typed_path.clone(),
+                    }));
+                }
                 cx.notify();
                 return;
             }
@@ -420,6 +473,13 @@ impl SshTargetModal {
                         this.suggestions = paths;
                         this.suggestions_key = Some(cache_key);
                         this.suggestions_loaded = true;
+                        let folder = this.folder.read(cx).text(cx);
+                        if this.embedded && folder.ends_with('/') {
+                            cx.emit(DirectoryBrowserEvent::Navigated(SshTarget {
+                                address: this.address.read(cx).text(cx).trim().to_owned(),
+                                folder,
+                            }));
+                        }
                         if !this.filtered_suggestions(cx).is_empty() {
                             this.selected_suggestion = Some(0);
                             this.suggestion_scroll.scroll_to_item(0);
@@ -499,6 +559,12 @@ impl SshTargetModal {
             path
         };
         self.folder.update(cx, |editor, cx| editor.set_text(format!("{display_path}/"), window, cx));
+        if self.embedded {
+            cx.emit(DirectoryBrowserEvent::Navigated(SshTarget {
+                address: self.address.read(cx).text(cx).trim().to_owned(),
+                folder: format!("{display_path}/"),
+            }));
+        }
         self.folder.focus_handle(cx).focus(window, cx);
     }
 
@@ -588,6 +654,8 @@ impl SshTargetModal {
     }
 
     fn open_target(&mut self, mut target: SshTarget, cx: &mut Context<Self>) {
+        if self.opening_folder.is_some() { return; }
+        let displayed_folder = target.folder.clone();
         let Some(folder) = self.resolved_path(&target.folder, cx) else {
             self.error = Some("Still looking up the Machine home directory".into());
             cx.notify();
@@ -600,10 +668,12 @@ impl SshTargetModal {
             return;
         }
         if self.embedded {
+            self.opening_folder = Some(displayed_folder);
+            cx.notify();
             cx.emit(DirectoryBrowserEvent::Open(target));
         } else {
             cx.emit(DismissEvent);
-            open_ssh_project(self.window.clone(), self.app_state.clone(), target, cx);
+            open_ssh_project(self.window.clone(), self.app_state.clone(), target, None, cx);
         }
     }
 
@@ -670,7 +740,12 @@ impl Render for SshTargetModal {
                         .toggle_state(self.selected_suggestion == Some(index))
                         .height(px(44.))
                         .inset(true)
-                        .child(Label::new(label))
+                        .child(h_flex().w_full().items_center().justify_between()
+                            .child(Label::new(label))
+                            .when(self.opening_folder.as_deref() == Some(path.as_str()), |this| this.child(
+                                Icon::new(IconName::LoadCircle).size(IconSize::Small)
+                                    .with_keyed_rotate_animation("opening-ssh-directory", 1)
+                            )))
                         .on_click(cx.listener(move |this, _, window, cx| this.select_suggestion(path.clone(), window, cx)))
                 })))
             .when_some(self.error.clone(), |this, error| {
@@ -681,10 +756,15 @@ impl Render for SshTargetModal {
                     ipad_picker_button("back-to-machine-projects", "Back to Projects", window, cx)
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(DirectoryBrowserEvent::Back))),
                 ))
+                .child(h_flex().gap_2()
+                    .when(self.opening_folder.is_some(), |this| this.child(
+                        Icon::new(IconName::LoadCircle).size(IconSize::Small)
+                            .with_keyed_rotate_animation("opening-ssh-folder", 1)
+                    ))
                 .child(
                 ipad_picker_button("connect-ssh-project", "Open This Folder", window, cx)
                     .on_click(cx.listener(Self::connect)),
-            ))
+            )))
     }
 }
 
@@ -734,6 +814,7 @@ struct MachinePicker {
     directory_browser: Option<Entity<SshTargetModal>>,
     selected_machine: usize,
     selected_project: usize,
+    opening_target: Option<SshTarget>,
     editing_index: Option<usize>,
     focused_projects: bool,
     address_focused: bool,
@@ -759,6 +840,22 @@ impl MachinePicker {
             self.connection_previous_state = Some(self.connection_state);
             self.connection_state = state;
             self.connection_transition_generation += 1;
+        }
+    }
+
+    fn remember_browse_path(&mut self, address: &str, folder: &str) {
+        if !(folder == "~" || folder.starts_with("~/") || Path::new(folder).is_absolute()) {
+            return;
+        }
+        let folder = if folder == "~" { "~/".to_owned() }
+            else if folder.ends_with('/') { folder.to_owned() }
+            else { format!("{folder}/") };
+        if self.store.browse_paths.get(address).is_some_and(|saved| saved == &folder) {
+            return;
+        }
+        self.store.browse_paths.insert(address.to_owned(), folder);
+        if let Err(error) = self.store.save() {
+            log::warn!("Could not save last browsed directory: {error:#}");
         }
     }
 
@@ -825,7 +922,9 @@ impl MachinePicker {
                             if let Some(username) = options.username { address = format!("{username}@{address}"); }
                             if let Some(port) = options.port { address = format!("ssh {address} -p {port}"); }
                             let target = SshTarget { address, folder: folder.to_string_lossy().into_owned() };
-                            if !this.targets.contains(&target) { this.targets.push(target); }
+                            if !this.targets.iter().any(|existing| existing.same_project(&target)) {
+                                this.targets.push(target);
+                            }
                         }
                         cx.notify();
                     });
@@ -835,7 +934,7 @@ impl MachinePicker {
         }).detach();
         Self {
             store, targets, machine_search, project_search, machine_name, machine_address, directory_browser: None,
-            selected_machine, selected_project: 0, editing_index: None, focused_projects: false, address_focused: false,
+            selected_machine, selected_project: 0, opening_target: None, editing_index: None, focused_projects: false, address_focused: false,
             stage: PickerStage::Browse, identity: None, setup_command: None, server_progress: None, busy: false, error: None, status: None, status_generation: 0,
             connection_state: ConnectionVisualState::Idle, connection_previous_state: None, connection_transition_generation: 0,
             focus_handle: cx.focus_handle(),
@@ -864,6 +963,7 @@ impl MachinePicker {
     }
 
     fn select_machine(&mut self, position: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.opening_target.is_some() { return; }
         self.selected_machine = position;
         self.selected_project = 0;
         self.stage = PickerStage::Browse;
@@ -890,17 +990,22 @@ impl MachinePicker {
     }
 
     fn open_project(&mut self, position: usize, cx: &mut Context<Self>) {
+        if self.opening_target.is_some() { return; }
         let Some(index) = self.visible_projects(cx).get(position).copied() else { return; };
         let target = self.targets[index].clone();
-        cx.emit(DismissEvent);
-        open_ssh_project(self.window.clone(), self.app_state.clone(), target, cx);
+        self.opening_target = Some(target.clone());
+        self.selected_project = position;
+        cx.notify();
+        open_ssh_project(self.window.clone(), self.app_state.clone(), target, Some(cx.entity().downgrade()), cx);
     }
 
     fn browse(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.opening_target.is_some() { return; }
         let Some(machine) = self.current_machine(cx).cloned() else { return; };
-        let folder = self.targets.iter().find(|target| target.address == machine.address)
-            .and_then(|target| Path::new(&target.folder).parent().map(|path| path.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "~/".into());
+        let folder = self.store.browse_paths.get(&machine.address).cloned().or_else(|| {
+            self.targets.iter().find(|target| target.address == machine.address)
+                .and_then(|target| Path::new(&target.folder).parent().map(|path| path.to_string_lossy().into_owned()))
+        }).unwrap_or_else(|| "~/".into());
         let target = SshTarget { address: machine.address, folder };
         let window_handle = self.window.clone();
         let app_state = self.app_state.clone();
@@ -912,8 +1017,13 @@ impl MachinePicker {
         cx.subscribe_in(&browser, window, |this, _, event, window, cx| match event {
             DirectoryBrowserEvent::Open(target) => {
                 let target = target.clone();
-                cx.emit(DismissEvent);
-                open_ssh_project(this.window.clone(), this.app_state.clone(), target, cx);
+                if this.opening_target.is_some() { return; }
+                this.opening_target = Some(target.clone());
+                cx.notify();
+                open_ssh_project(this.window.clone(), this.app_state.clone(), target, Some(cx.entity().downgrade()), cx);
+            }
+            DirectoryBrowserEvent::Navigated(target) => {
+                this.remember_browse_path(&target.address, &target.folder);
             }
             DirectoryBrowserEvent::Back => {
                 this.stage = PickerStage::Browse;
@@ -963,7 +1073,8 @@ impl MachinePicker {
 
     fn remove_machine(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.visible_machines(cx).get(self.selected_machine).copied() else { return; };
-        self.store.machines.remove(index);
+        let removed = self.store.machines.remove(index);
+        self.store.browse_paths.remove(&removed.address);
         self.store.selected_address = self.store.machines.first().map(|machine| machine.address.clone());
         if let Err(error) = self.store.save() { self.error = Some(error.to_string().into()); }
         self.selected_machine = 0;
@@ -1108,6 +1219,9 @@ impl MachinePicker {
                     Ok(()) => {
                         this.store.selected_address = Some(machine.address.clone());
                         if let Some(index) = this.editing_index.take() {
+                            if this.store.machines[index].address != machine.address {
+                                this.store.browse_paths.remove(&this.store.machines[index].address);
+                            }
                             this.store.machines[index] = machine;
                         } else {
                             this.store.machines.push(machine);
@@ -1248,6 +1362,7 @@ impl MachinePicker {
     }
 
     fn back(&mut self, _: &PickerBack, window: &mut Window, cx: &mut Context<Self>) {
+        if self.opening_target.is_some() { return; }
         match self.stage {
             PickerStage::Browse if self.focused_projects => self.machine_search.focus_handle(cx).focus(window, cx),
             PickerStage::Browse => {
@@ -1370,7 +1485,12 @@ impl Render for MachinePicker {
                                 .toggle_state(self.focused_projects && self.selected_project == position)
                                 .height(px(56.))
                                 .inset(true)
-                                .child(v_flex().child(Label::new(name)).child(Label::new(target.folder.clone()).color(Color::Muted)))
+                                .child(h_flex().w_full().items_center().justify_between()
+                                    .child(v_flex().child(Label::new(name)).child(Label::new(target.folder.clone()).color(Color::Muted)))
+                                    .when(self.opening_target.as_ref() == Some(target), |this| this.child(
+                                        Icon::new(IconName::LoadCircle).size(IconSize::Small)
+                                            .with_keyed_rotate_animation("opening-ssh-project", 1)
+                                    )))
                                 .on_click(cx.listener(move |this, _, _, cx| this.open_project(position, cx)))
                         }))
                         .when(self.current_machine(cx).is_some(), |this| {
@@ -1538,6 +1658,7 @@ fn open_ssh_project(
     window: gpui::WindowHandle<MultiWorkspace>,
     app_state: Arc<AppState>,
     mut target: SshTarget,
+    picker: Option<WeakEntity<MachinePicker>>,
     cx: &mut App,
 ) {
     target.address = target.address.trim().to_owned();
@@ -1557,19 +1678,39 @@ fn open_ssh_project(
         ssh_options.nickname = Some(machine.name);
     }
     let path = PathBuf::from(target.folder.trim());
+    let existing_workspace = window.update(cx, |multi, window, cx| {
+        let paths = PathList::new(&[path.clone()]);
+        let host = RemoteConnectionOptions::Ssh(ssh_options.clone());
+        let Some(existing) = multi.workspace_for_paths(&paths, Some(&host), cx) else {
+            return false;
+        };
+        multi.workspace().update(cx, |workspace, cx| {
+            workspace.hide_modal(window, cx);
+        });
+        multi.activate(existing, window, cx);
+        true
+    }).unwrap_or(false);
+    if existing_workspace {
+        log::info!("Activated an already open SSH project without reconnecting");
+        return;
+    }
     let (cancel, cancel_rx) = oneshot::channel();
     let delegate: Arc<dyn RemoteClientDelegate> = Arc::new(IpadRemoteDelegate { _cancel: cancel });
 
     cx.spawn(async move |cx| {
+        let started = Instant::now();
         let result: anyhow::Result<()> = async {
             remote::check_ssh_directory(
                 ssh_options.clone(),
                 path.to_string_lossy().into_owned(),
             ).await?;
+            log::info!("iZed project open: directory checked in {} ms", started.elapsed().as_millis());
             delegate.set_status(Some("Preparing Zed remote server"), cx);
             remote::ensure_ssh_server(ssh_options.clone(), bundled_server_archives()?, None).await?;
+            log::info!("iZed project open: server ready after {} ms", started.elapsed().as_millis());
             let options = RemoteConnectionOptions::Ssh(ssh_options);
             let connection = remote::connect(options, delegate.clone(), cx).await?;
+            log::info!("iZed project open: SSH connected after {} ms", started.elapsed().as_millis());
             cx.update(|cx| {
                 workspace::open_remote_project_with_new_connection(
                     window.clone(),
@@ -1582,6 +1723,7 @@ fn open_ssh_project(
                 )
             })
             .await?;
+            log::info!("iZed project open: workspace restored after {} ms", started.elapsed().as_millis());
 
             if let Err(error) = target.save() {
                 log::warn!("Could not save SSH project: {error:#}");
@@ -1589,6 +1731,11 @@ fn open_ssh_project(
 
             window.update(cx, |multi, window, cx| {
                 let workspace = multi.workspace().clone();
+                if let Some(client) = workspace.read(cx).project().read(cx).remote_client() {
+                    let status = cx.new(|cx| SshConnectionStatus::new(client, cx));
+                    let status_bar = workspace.read(cx).status_bar().clone();
+                    status_bar.update(cx, |bar, cx| bar.add_left_item(status, window, cx));
+                }
                 if let Some(trusted) = TrustedWorktrees::try_get_global(cx) {
                     let worktree_store = workspace.read(cx).project().read(cx).worktree_store();
                     trusted.update(cx, |trusted, cx| {
@@ -1606,7 +1753,6 @@ fn open_ssh_project(
                                 .await?;
                         workspace.update_in(cx, |workspace, window, cx| {
                             workspace.add_panel(panel, window, cx);
-                            workspace.open_panel::<project_panel::ProjectPanel>(window, cx);
                         })?;
                         let terminal_panel = terminal_view::terminal_panel::TerminalPanel::load(
                             workspace.downgrade(),
@@ -1636,7 +1782,9 @@ fn open_ssh_project(
                             workspace.register_action(agent_ui::AgentPanel::toggle);
                         })?;
                         workspace.update_in(cx, |workspace, window, cx| {
-                            if workspace.active_item(cx).is_some() {
+                            if workspace.active_item(cx).is_some()
+                                || !workspace.left_dock().read(cx).is_open()
+                            {
                                 workspace.focus_center_pane(window, cx);
                             } else {
                                 workspace.focus_panel::<project_panel::ProjectPanel>(window, cx);
@@ -1659,6 +1807,25 @@ fn open_ssh_project(
         if let Err(error) = result {
             log::error!("Could not open Zed SSH workspace: {error:#}");
             let message = error.to_string();
+            let picker_is_visible = window.update(cx, |multi, _, cx| {
+                multi.workspace().read(cx).active_modal::<MachinePicker>(cx).is_some()
+            }).unwrap_or(false);
+            if let Some(picker) = picker.filter(|_| picker_is_visible) {
+                if picker.update(cx, |picker, cx| {
+                    picker.opening_target = None;
+                    picker.error = Some(message.clone().into());
+                    if let Some(browser) = &picker.directory_browser {
+                        browser.update(cx, |browser, cx| {
+                            browser.opening_folder = None;
+                            browser.error = Some(message.clone().into());
+                            cx.notify();
+                        });
+                    }
+                    cx.notify();
+                }).is_ok() {
+                    return;
+                }
+            }
             let target_window = window.clone();
             let _ = window.update(cx, |multi, window, cx| {
                 multi.workspace().update(cx, |workspace, cx| {
@@ -1991,6 +2158,16 @@ pub fn open(cx: &mut App) {
         Ok(window) => {
             log::info!("Opened Zed recent projects");
             *remote_action_window.borrow_mut() = Some(window.clone());
+            let sidebar_window = window.clone();
+            if let Ok(multi_workspace) = window.entity(cx) {
+                cx.defer(move |cx| {
+                    if let Ok(sidebar) = cx.update_window(sidebar_window.into(), |_, window, cx| {
+                        cx.new(|cx| sidebar::Sidebar::new(multi_workspace.clone(), window, cx))
+                    }) {
+                        multi_workspace.update(cx, |multi, cx| multi.register_sidebar(sidebar, cx));
+                    }
+                });
+            }
             let target_window = window.clone();
             if let Err(error) = window.update(cx, |multi, window, cx| {
                 multi.workspace().update(cx, |workspace, cx| {

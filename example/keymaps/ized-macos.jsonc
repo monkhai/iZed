@@ -11,11 +11,19 @@
     "bindings": {
       "cmd-b": "project_panel::Toggle",
       "cmd-j": "terminal_panel::Toggle",
+      "alt-cmd-s": "multi_workspace::ToggleWorkspaceSidebar",
       "cmd-shift-a": "agent::ToggleFocus",
       "cmd-e": "workspace::FocusCenterPane",
       "alt-#": ["workspace::IncreaseActiveDockSize", { "px": 100 }],
       "alt-@": ["workspace::DecreaseActiveDockSize", { "px": 100 }],
       "ctrl-alt--": ["workspace::DecreaseActiveDockSize", { "px": 10 }]
+    }
+  },
+  {
+    "context": "Workspace",
+    "unbind": {
+      "alt-cmd-j": "multi_workspace::ToggleWorkspaceSidebar",
+      "alt-cmd-s": "workspace::SaveAll"
     }
   },
   {

@@ -1,0 +1,83 @@
+diff --git a/crates/remote/src/transport/ssh_ios.rs b/crates/remote/src/transport/ssh_ios.rs
+--- a/crates/remote/src/transport/ssh_ios.rs
++++ b/crates/remote/src/transport/ssh_ios.rs
+@@ -27,9 +27,9 @@
+     fs::{self, File, OpenOptions},
+     io::{Read as _, Write as _},
+     os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
+-    path::PathBuf,
++    path::{Path, PathBuf},
+     sync::{
+-        Arc, Mutex,
++        Arc, Mutex, OnceLock,
+         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+     },
+     time::Duration,
+@@ -589,6 +589,40 @@
+     }).await
+ }
+ 
++fn bundled_archive_digest(archive: &Path) -> Result<(String, u64)> {
++    // The app bundle cannot change while this process is running. Hash each
++    // bundled archive once instead of reading it again for every project open.
++    static DIGESTS: OnceLock<Mutex<HashMap<PathBuf, (String, u64)>>> = OnceLock::new();
++    let digests = DIGESTS.get_or_init(|| Mutex::new(HashMap::default()));
++    if let Some(digest) = digests
++        .lock()
++        .unwrap_or_else(|poison| poison.into_inner())
++        .get(archive)
++        .cloned()
++    {
++        return Ok(digest);
++    }
++
++    let mut file = File::open(archive)
++        .with_context(|| format!("Zed server archive is missing from the app: {}", archive.display()))?;
++    let mut hasher = Sha256::new();
++    let mut size = 0;
++    let mut buffer = [0u8; 64 * 1024];
++    loop {
++        let count = file.read(&mut buffer)?;
++        if count == 0 { break; }
++        hasher.update(&buffer[..count]);
++        size += count as u64;
++    }
++    anyhow::ensure!(size > 0, "Zed server archive is empty");
++    let digest = (format!("{:x}", hasher.finalize()), size);
++    digests
++        .lock()
++        .unwrap_or_else(|poison| poison.into_inner())
++        .insert(archive.to_path_buf(), digest.clone());
++    Ok(digest)
++}
++
+ /// Install the matching server through the already trusted SSH connection.
+ /// The remote Mac only needs SSH; it does not need the Zed desktop app.
+ pub async fn ensure_ssh_server(options: SshConnectionOptions, archives_dir: PathBuf, progress: Option<Arc<SshServerProgress>>) -> Result<()> {
+@@ -605,24 +639,8 @@
+         _ => bail!("Automatic Zed server setup does not support this Mac architecture: {arch}"),
+     };
+     let archive = archives_dir.join(archive_name);
+-    let (digest, size) = smol::unblock({
+-        let archive = archive.clone();
+-        move || -> Result<(String, u64)> {
+-            let mut file = File::open(&archive)
+-                .with_context(|| format!("Zed server archive is missing from the app: {}", archive.display()))?;
+-            let mut hasher = Sha256::new();
+-            let mut size = 0;
+-            let mut buffer = [0u8; 64 * 1024];
+-            loop {
+-                let count = file.read(&mut buffer)?;
+-                if count == 0 { break; }
+-                hasher.update(&buffer[..count]);
+-                size += count as u64;
+-            }
+-            anyhow::ensure!(size > 0, "Zed server archive is empty");
+-            Ok((format!("{:x}", hasher.finalize()), size))
+-        }
+-    }).await?;
++    let digest_archive = archive.clone();
++    let (digest, size) = smol::unblock(move || bundled_archive_digest(&digest_archive)).await?;
+     let marker = "$HOME/.zed_server/.ized-server-sha256";
+     let binary = "$HOME/.zed_server/zed-remote-server-dev-build";
+     let check = format!("if [ -x \"{binary}\" ] && [ -f \"{marker}\" ]; then cat \"{marker}\"; fi");

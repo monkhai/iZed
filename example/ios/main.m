@@ -244,6 +244,32 @@
     gpui_ios_run_demo();
 #endif
 }
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+#ifdef USE_GPUI_RUST
+    gpui_ios_did_become_active(NULL);
+#endif
+}
+- (void)sceneWillResignActive:(UIScene *)scene {
+#ifdef USE_GPUI_RUST
+    gpui_ios_will_resign_active(NULL);
+#endif
+}
+- (void)sceneWillEnterForeground:(UIScene *)scene {
+#ifdef USE_GPUI_RUST
+    gpui_ios_will_enter_foreground(NULL);
+    if (!self.displayLink) {
+        self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(renderFrame)];
+        [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    }
+#endif
+}
+- (void)sceneDidEnterBackground:(UIScene *)scene {
+#ifdef USE_GPUI_RUST
+    gpui_ios_did_enter_background(NULL);
+    [self.displayLink invalidate];
+    self.displayLink = nil;
+#endif
+}
 - (void)renderFrame {
 #ifdef USE_GPUI_RUST
     void *window = gpui_ios_get_window();
