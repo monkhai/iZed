@@ -1,0 +1,102 @@
+// iPad bindings adapted from ~/.config/zed/keymap.json. Keep actions here
+// limited to Zed components initialized by the iPad workspace.
+[
+  {
+    "context": "Workspace",
+    "bindings": {
+      "cmd-b": "project_panel::Toggle",
+      "cmd-e": "workspace::FocusCenterPane",
+      "alt-#": ["workspace::IncreaseActiveDockSize", { "px": 100 }],
+      "alt-@": ["workspace::DecreaseActiveDockSize", { "px": 100 }],
+      "ctrl-alt--": ["workspace::DecreaseActiveDockSize", { "px": 10 }]
+    }
+  },
+  {
+    "context": "Pane",
+    "bindings": {
+      "alt-cmd-k": "pane::ActivateNextItem",
+      "alt-cmd-j": "pane::ActivatePreviousItem"
+    }
+  },
+  {
+    "context": "Workspace && !Terminal",
+    "unbind": { "cmd-n": "workspace::NewFile" }
+  },
+  {
+    "context": "Editor && vim_mode == normal && !VimWaiting && !menu",
+    "bindings": {
+      "+": ["workspace::SendKeystrokes", "$"],
+      "ctrl-j": ["workspace::SendKeystrokes", "ctrl-d"],
+      "ctrl-k": ["workspace::SendKeystrokes", "ctrl-u"],
+      "space d": ["workspace::SendKeystrokes", "d $"],
+      "space c": ["workspace::SendKeystrokes", "c $"],
+      "space v": ["workspace::SendKeystrokes", "v $ h"],
+      "space shift-w": ["workspace::SendKeystrokes", "v i shift-w"],
+      "space w": ["workspace::SendKeystrokes", "v i w"],
+      "space {": ["workspace::SendKeystrokes", "v i {"],
+      "space }": ["workspace::SendKeystrokes", "v a {"],
+      "space [": ["workspace::SendKeystrokes", "v i ["],
+      "space ]": ["workspace::SendKeystrokes", "v a ["],
+      "space (": ["workspace::SendKeystrokes", "v i ("],
+      "space )": ["workspace::SendKeystrokes", "v a ("],
+      "space \"": ["workspace::SendKeystrokes", "v i \""],
+      "space '": ["workspace::SendKeystrokes", "v i '"]
+    }
+  },
+  {
+    "context": "Menu",
+    "bindings": { "ctrl-j": "menu::SelectNext", "ctrl-k": "menu::SelectPrevious" }
+  },
+  {
+    "context": "Picker > Editor",
+    "bindings": { "ctrl-j": "menu::SelectNext", "ctrl-k": "menu::SelectPrevious" }
+  },
+  {
+    "context": "AutocompleteMenu",
+    "bindings": {
+      "ctrl-j": "editor::ContextMenuNext",
+      "ctrl-k": "editor::ContextMenuPrevious"
+    }
+  },
+  {
+    "context": "Editor && !menu",
+    "bindings": {
+      "alt-j": "editor::MoveLineDown",
+      "alt-k": "editor::MoveLineUp",
+      "shift-alt-j": "editor::DuplicateLineDown",
+      "shift-alt-k": "editor::DuplicateLineUp"
+    }
+  },
+  {
+    "context": "VimControl && !menu",
+    "unbind": { "shift-k": "editor::Hover" },
+    "bindings": {
+      "cmd-{": "editor::Fold",
+      "cmd-}": "editor::UnfoldLines",
+      "cmd-l": "editor::Hover"
+    }
+  },
+  {
+    "context": "ProjectPanel && not_editing",
+    "unbind": {
+      "d": "project_panel::NewDirectory",
+      "shift-d": "project_panel::Delete",
+      "shift-r": "project_panel::Rename"
+    },
+    "bindings": {
+      "n d": "project_panel::NewDirectory",
+      "d d": ["project_panel::Delete", { "skip_prompt": true }],
+      "r n": "project_panel::Rename"
+    }
+  },
+  {
+    "context": "ProjectPanel",
+    "unbind": { "cmd-n": "project_panel::NewFile" },
+    "bindings": { "f f": "project_panel::NewFile" }
+  },
+  {
+    "context": "FileFinder || FileFinder > Picker > Editor || FileFinder > Picker > menu",
+    "unbind": { "cmd-j": "pane::SplitDown" },
+    "bindings": { "alt-cmd-j": "pane::SplitDown" }
+  }
+]

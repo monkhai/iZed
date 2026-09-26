@@ -1,0 +1,81 @@
+[package]
+name = "gpui-mobile-example"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform GPUI example app for Android and iOS"
+publish = false
+
+[features]
+editor-spike = ["dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:db", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:grammars", "dep:language", "dep:node_runtime", "dep:project", "dep:project_panel", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:smol", "dep:theme", "dep:theme_settings", "dep:ui", "dep:vim", "dep:workspace", "dep:zed_actions"]
+
+[lib]
+name = "gpui_mobile_example"
+crate-type = ["cdylib", "staticlib", "lib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "gpui-example"
+path = "src/main.rs"
+
+[dependencies]
+gpui-mobile = { path = ".." }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "gpui", default-features = false }
+anyhow = { version = "1", optional = true }
+askpass = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "askpass", optional = true }
+assets = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "assets", optional = true }
+client = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "client", optional = true }
+collections = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "collections", optional = true }
+command_palette = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "command_palette", optional = true }
+command_palette_hooks = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "command_palette_hooks", optional = true }
+db = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "db", optional = true }
+editor = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "editor", optional = true }
+file_finder = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "file_finder", optional = true }
+fs = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "fs", optional = true }
+futures = { version = "0.3", optional = true }
+grammars = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "grammars", features = ["load-grammars"], optional = true }
+language = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "language", optional = true }
+node_runtime = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "node_runtime", optional = true }
+project = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "project", optional = true }
+project_panel = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "project_panel", optional = true }
+release_channel = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "release_channel", optional = true }
+remote = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "remote", optional = true }
+settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "settings", optional = true }
+theme = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme", optional = true }
+theme_settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme_settings", optional = true }
+vim = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "vim", optional = true }
+workspace = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "workspace", optional = true }
+reqwest_client = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "reqwest_client" }
+reqwest = { git = "https://github.com/zed-industries/reqwest.git", rev = "c15662463bda39148ba154100dd44d3fba5873a4", package = "zed-reqwest", default-features = false, features = ["rustls-tls"] }
+log = "0.4"
+rust-embed = { version = "8.11", features = ["debug-embed"], optional = true }
+session = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "session", optional = true }
+semver = { version = "1", optional = true }
+smol = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+ui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "ui", optional = true }
+zed_actions = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "zed_actions", optional = true }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
+android-activity = { version = "0.6", features = ["native-activity"] }
+
+[patch.crates-io]
+async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
+livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "147fbca3d4b592d96d33f5e6a84b59fc0b5d9bf1" }
+libwebrtc = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "147fbca3d4b592d96d33f5e6a84b59fc0b5d9bf1" }
+webrtc-sys = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "147fbca3d4b592d96d33f5e6a84b59fc0b5d9bf1" }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+debug = true
