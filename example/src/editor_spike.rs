@@ -1624,6 +1624,17 @@ fn open_ssh_project(
                         workspace.update_in(cx, |workspace, window, cx| {
                             workspace.add_panel(debug_panel, window, cx);
                         })?;
+                        let agent_panel = agent_ui::AgentPanel::load(
+                            workspace.downgrade(),
+                            cx.clone(),
+                        )
+                        .await?;
+                        workspace.update_in(cx, |workspace, window, cx| {
+                            workspace.add_panel(agent_panel, window, cx);
+                            workspace.register_action(agent_ui::AgentPanel::toggle_focus);
+                            workspace.register_action(agent_ui::AgentPanel::focus);
+                            workspace.register_action(agent_ui::AgentPanel::toggle);
+                        })?;
                         workspace.update_in(cx, |workspace, window, cx| {
                             if workspace.active_item(cx).is_some() {
                                 workspace.focus_center_pane(window, cx);
@@ -1665,6 +1676,18 @@ fn open_ssh_project(
 }
 
 pub fn open(cx: &mut App) {
+    // Zed's desktop data paths resolve under hidden home directories, which
+    // iPadOS does not let this app create. Keep its database and agent threads
+    // together in the app's writable Documents container.
+    let zed_data_dir = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("Documents")
+        .join("Zed");
+    paths::set_custom_data_dir(zed_data_dir.to_string_lossy().as_ref());
+    if let Err(error) = std::fs::create_dir_all(paths::config_dir()) {
+        log::error!("Could not create iPad Zed config directory: {error}");
+    }
     if let Err(error) = cx.text_system().add_fonts(vec![
         Cow::Borrowed(include_bytes!("../fonts/JetBrainsMonoNerdFont-Light.ttf")),
         Cow::Borrowed(include_bytes!("../fonts/JetBrainsMono-Regular.ttf")),
@@ -1695,6 +1718,7 @@ pub fn open(cx: &mut App) {
         theme_settings::reload_theme(cx);
     }
     release_channel::init(semver::Version::new(0, 233, 0), cx);
+    gpui_tokio::init(cx);
 
     let http_client: reqwest_client::ReqwestClient = reqwest::Client::new().into();
     cx.set_http_client(Arc::new(http_client));
@@ -1739,6 +1763,12 @@ pub fn open(cx: &mut App) {
     AppState::set_global(app_state.clone(), cx);
 
     workspace::init(app_state.clone(), cx);
+    language_model::init(cx);
+    client::RefreshLlmTokenListener::register(app_state.client.clone(), app_state.user_store.clone(), cx);
+    language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
+    let prompt_builder = prompt_store::PromptBuilder::load(app_state.fs.clone(), false, cx);
+    project::AgentRegistryStore::init_global(cx, app_state.fs.clone(), app_state.client.http_client());
+    agent_ui::init(app_state.fs.clone(), prompt_builder, app_state.languages.clone(), false, false, cx);
     let remote_action_state = app_state.clone();
     let remote_action_window: Rc<RefCell<Option<WindowHandle<MultiWorkspace>>>> =
         Rc::new(RefCell::new(None));
@@ -1836,6 +1866,8 @@ pub fn open(cx: &mut App) {
             "terminal_panel::ToggleFocus",
             "workspace::NewTerminal",
             "debug_panel::ToggleFocus",
+            "agent::ToggleFocus",
+            "agent::NewThread",
             "debugger::Start",
             "debugger::Continue",
             "debugger::Pause",

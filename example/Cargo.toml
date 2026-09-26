@@ -6,7 +6,7 @@ description = "Cross-platform GPUI example app for Android and iOS"
 publish = false
 
 [features]
-editor-spike = ["dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:grammars", "dep:language", "dep:node_runtime", "dep:project", "dep:project_panel", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:vim", "dep:workspace", "dep:zed_actions"]
+editor-spike = ["dep:agent_ui", "dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:gpui_tokio", "dep:grammars", "dep:language", "dep:language_model", "dep:language_models", "dep:node_runtime", "dep:paths", "dep:project", "dep:project_panel", "dep:prompt_store", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:vim", "dep:workspace", "dep:zed_actions"]
 
 [lib]
 name = "gpui_mobile_example"
@@ -20,6 +20,8 @@ path = "src/main.rs"
 [dependencies]
 gpui-mobile = { path = ".." }
 gpui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "gpui", default-features = false }
+gpui_tokio = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "gpui_tokio", optional = true }
+agent_ui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "agent_ui", optional = true }
 anyhow = { version = "1", optional = true }
 askpass = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "askpass", optional = true }
 assets = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "assets", optional = true }
@@ -36,9 +38,13 @@ fs = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca548
 futures = { version = "0.3", optional = true }
 grammars = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "grammars", features = ["load-grammars"], optional = true }
 language = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "language", optional = true }
+language_model = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "language_model", optional = true }
+language_models = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "language_models", optional = true }
 node_runtime = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "node_runtime", optional = true }
+paths = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "paths", optional = true }
 project = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "project", optional = true }
 project_panel = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "project_panel", optional = true }
+prompt_store = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "prompt_store", optional = true }
 release_channel = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "release_channel", optional = true }
 remote = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "remote", optional = true }
 settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "settings", optional = true }

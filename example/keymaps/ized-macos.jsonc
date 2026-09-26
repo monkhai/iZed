@@ -6,6 +6,7 @@
     "bindings": {
       "cmd-b": "project_panel::Toggle",
       "cmd-j": "terminal_panel::Toggle",
+      "cmd-shift-a": "agent::ToggleFocus",
       "cmd-e": "workspace::FocusCenterPane",
       "alt-#": ["workspace::IncreaseActiveDockSize", { "px": 100 }],
       "alt-@": ["workspace::DecreaseActiveDockSize", { "px": 100 }],

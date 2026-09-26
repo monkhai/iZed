@@ -1,0 +1,107 @@
+diff --git a/crates/prompt_store/src/prompt_store.rs b/crates/prompt_store/src/prompt_store.rs
+index 9628e23cd7..cca8c08d45 100644
+--- a/crates/prompt_store/src/prompt_store.rs
++++ b/crates/prompt_store/src/prompt_store.rs
+@@ -14,6 +14,8 @@ use heed::{
+     types::{SerdeBincode, SerdeJson, Str},
+ };
+ use parking_lot::RwLock;
++#[cfg(target_os = "ios")]
++use parking_lot::Mutex;
+ pub use prompts::*;
+ use rope::Rope;
+ use serde::{Deserialize, Serialize};
+@@ -171,6 +173,8 @@ impl std::fmt::Display for PromptId {
+ 
+ pub struct PromptStore {
+     env: heed::Env,
++    #[cfg(target_os = "ios")]
++    io_lock: Arc<Mutex<()>>,
+     metadata_cache: RwLock<MetadataCache>,
+     metadata: Database<SerdeJson<PromptId>, SerdeJson<PromptMetadata>>,
+     bodies: Database<SerdeJson<PromptId>, Str>,
+@@ -253,12 +257,18 @@ impl PromptStore {
+         cx.background_spawn(async move {
+             std::fs::create_dir_all(&db_path)?;
+ 
+-            let db_env = unsafe {
+-                heed::EnvOpenOptions::new()
+-                    .map_size(1024 * 1024 * 1024) // 1GB
+-                    .max_dbs(4) // Metadata and bodies (possibly v1 of both as well)
+-                    .open(db_path)?
+-            };
++            let mut options = heed::EnvOpenOptions::new();
++            options
++                .map_size(1024 * 1024 * 1024) // 1GB
++                .max_dbs(4); // Metadata and bodies (possibly v1 of both as well)
++            #[cfg(target_os = "ios")]
++            unsafe {
++                // iPadOS disallows the System V semaphore used by LMDB's lock
++                // table. This process is the sole owner of this database; the
++                // per-store mutex below serializes its transactions.
++                options.flags(heed::EnvFlags::NO_LOCK);
++            }
++            let db_env = unsafe { options.open(db_path)? };
+ 
+             let mut txn = db_env.write_txn()?;
+             let metadata = db_env.create_database(&mut txn, Some("metadata.v2"))?;
+@@ -273,6 +283,8 @@ impl PromptStore {
+ 
+             Ok(PromptStore {
+                 env: db_env,
++                #[cfg(target_os = "ios")]
++                io_lock: Arc::new(Mutex::new(())),
+                 metadata_cache: RwLock::new(metadata_cache),
+                 metadata,
+                 bodies,
+@@ -342,7 +354,11 @@ impl PromptStore {
+     pub fn load(&self, id: PromptId, cx: &App) -> Task<Result<String>> {
+         let env = self.env.clone();
+         let bodies = self.bodies;
++        #[cfg(target_os = "ios")]
++        let io_lock = self.io_lock.clone();
+         cx.background_spawn(async move {
++            #[cfg(target_os = "ios")]
++            let _guard = io_lock.lock();
+             let txn = env.read_txn()?;
+             let mut prompt: String = match bodies.get(&txn, &id)? {
+                 Some(body) => body.into(),
+@@ -380,8 +396,12 @@ impl PromptStore {
+         let db_connection = self.env.clone();
+         let bodies = self.bodies;
+         let metadata = self.metadata;
++        #[cfg(target_os = "ios")]
++        let io_lock = self.io_lock.clone();
+ 
+         let task = cx.background_spawn(async move {
++            #[cfg(target_os = "ios")]
++            let _guard = io_lock.lock();
+             let mut txn = db_connection.write_txn()?;
+ 
+             metadata.delete(&mut txn, &id)?;
+@@ -509,8 +529,12 @@ impl PromptStore {
+         let db_connection = self.env.clone();
+         let bodies = self.bodies;
+         let metadata_db = self.metadata;
++        #[cfg(target_os = "ios")]
++        let io_lock = self.io_lock.clone();
+ 
+         let task = cx.background_spawn(async move {
++            #[cfg(target_os = "ios")]
++            let _guard = io_lock.lock();
+             let mut txn = db_connection.write_txn()?;
+ 
+             if is_default_content {
+@@ -560,8 +584,12 @@ impl PromptStore {
+ 
+         let db_connection = self.env.clone();
+         let metadata = self.metadata;
++        #[cfg(target_os = "ios")]
++        let io_lock = self.io_lock.clone();
+ 
+         let task = cx.background_spawn(async move {
++            #[cfg(target_os = "ios")]
++            let _guard = io_lock.lock();
+             let mut txn = db_connection.write_txn()?;
+             metadata.put(&mut txn, &id, &prompt_metadata)?;
+             txn.commit()?;
