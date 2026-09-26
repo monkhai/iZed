@@ -1542,13 +1542,20 @@ fn open_ssh_project(
 ) {
     target.address = target.address.trim().to_owned();
     target.folder = target.folder.trim().to_owned();
-    let ssh_options = match target.connection_options() {
+    let mut ssh_options = match target.connection_options() {
         Ok(options) => options,
         Err(error) => {
             log::error!("Invalid SSH target: {error:#}");
             return;
         }
     };
+    if let Some(machine) = MachineStore::load()
+        .machines
+        .into_iter()
+        .find(|machine| machine.address.trim() == target.address)
+    {
+        ssh_options.nickname = Some(machine.name);
+    }
     let path = PathBuf::from(target.folder.trim());
     let (cancel, cancel_rx) = oneshot::channel();
     let delegate: Arc<dyn RemoteClientDelegate> = Arc::new(IpadRemoteDelegate { _cancel: cancel });
@@ -1600,6 +1607,14 @@ fn open_ssh_project(
                         workspace.update_in(cx, |workspace, window, cx| {
                             workspace.add_panel(panel, window, cx);
                             workspace.open_panel::<project_panel::ProjectPanel>(window, cx);
+                        })?;
+                        let terminal_panel = terminal_view::terminal_panel::TerminalPanel::load(
+                            workspace.downgrade(),
+                            cx.clone(),
+                        )
+                        .await?;
+                        workspace.update_in(cx, |workspace, window, cx| {
+                            workspace.add_panel(terminal_panel, window, cx);
                         })?;
                         workspace.update_in(cx, |workspace, window, cx| {
                             if workspace.active_item(cx).is_some() {
@@ -1807,10 +1822,14 @@ pub fn open(cx: &mut App) {
             "workspace::ActivateNextPane",
             "workspace::ActivatePreviousPane",
             "project_panel::Toggle",
+            "terminal_panel::Toggle",
+            "terminal_panel::ToggleFocus",
+            "workspace::NewTerminal",
             "projects::OpenRemote",
         ]);
     });
     project_panel::init(cx);
+    terminal_view::init(cx);
     vim::init(cx);
     // iPad hardware keyboards use Command for app shortcuts, as on macOS.
     // settings::DEFAULT_KEYMAP_PATH falls back to Linux on iOS.

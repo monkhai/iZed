@@ -1,0 +1,419 @@
+diff --git a/crates/project/src/terminals.rs b/crates/project/src/terminals.rs
+index 6efddcd..d97dde6 100644
+--- a/crates/project/src/terminals.rs
++++ b/crates/project/src/terminals.rs
+@@ -319,6 +319,11 @@ impl Project {
+         force_local: bool,
+         cx: &mut Context<Self>,
+     ) -> Task<Result<Entity<Terminal>>> {
++        #[cfg(target_os = "ios")]
++        if self.remote_client.is_some() && !force_local {
++            return self.create_ios_remote_terminal_shell(cwd, cx);
++        }
++
+         let path = cwd.map(|p| Arc::from(&*p));
+         let is_via_remote = !force_local && self.remote_client.is_some();
+ 
+@@ -450,6 +455,52 @@ impl Project {
+         })
+     }
+ 
++    #[cfg(target_os = "ios")]
++    fn create_ios_remote_terminal_shell(
++        &mut self,
++        cwd: Option<PathBuf>,
++        cx: &mut Context<Self>,
++    ) -> Task<Result<Entity<Terminal>>> {
++        use remote::RemoteConnectionOptions;
++        use terminal::RemoteTerminalChannels;
++
++        let Some(remote_client) = self.remote_client.as_ref() else {
++            return Task::ready(Err(anyhow::anyhow!("No Machine is connected")));
++        };
++        let connection = remote_client.read(cx).connection_options();
++        let title = format!("{} — Terminal", connection.display_name());
++        let RemoteConnectionOptions::Ssh(options) = connection else {
++            return Task::ready(Err(anyhow::anyhow!("Only SSH Machines support terminals on iPad")));
++        };
++        let settings = TerminalSettings::get(None, cx).clone();
++        let window_id = cx.entity_id().as_u64();
++        let executor = cx.background_executor().clone();
++        let path_style = self.path_style(cx);
++
++        cx.spawn(async move |project, cx| {
++            let session = remote::open_ssh_terminal(options, cwd).await?;
++            let builder = TerminalBuilder::new_remote(
++                RemoteTerminalChannels {
++                    input_tx: session.input_tx,
++                    resize_tx: session.resize_tx,
++                    output_rx: session.output_rx,
++                },
++                title,
++                settings.cursor_shape,
++                settings.alternate_scroll,
++                settings.max_scroll_history_lines,
++                window_id,
++                &executor,
++                path_style,
++            )?;
++            project.update(cx, move |project, cx| {
++                let terminal = cx.new(|cx| builder.subscribe(cx));
++                project.terminals.local_handles.push(terminal.downgrade());
++                terminal
++            })
++        })
++    }
++
+     pub fn clone_terminal(
+         &mut self,
+         terminal: &Entity<Terminal>,
+diff --git a/crates/remote/src/remote.rs b/crates/remote/src/remote.rs
+index ee4d97a..0ba948f 100644
+--- a/crates/remote/src/remote.rs
++++ b/crates/remote/src/remote.rs
+@@ -14,7 +14,7 @@ pub use remote_client::{
+ pub use transport::docker::DockerConnectionOptions;
+ pub use transport::ssh::{SshConnectionOptions, SshPortForwardOption};
+ #[cfg(target_os = "ios")]
+-pub use transport::ssh_ios::{SshHostIdentity, SshServerPhase, SshServerProgress, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, probe_ssh_host, ssh_home_directory, trust_ssh_host};
++pub use transport::ssh_ios::{SshHostIdentity, SshServerPhase, SshServerProgress, SshTerminalSession, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, open_ssh_terminal, probe_ssh_host, ssh_home_directory, trust_ssh_host};
+ pub use transport::wsl::WslConnectionOptions;
+ #[cfg(target_os = "windows")]
+ pub use transport::wsl::wsl_path_to_windows_path;
+diff --git a/crates/remote/src/transport/ssh_ios.rs b/crates/remote/src/transport/ssh_ios.rs
+index 5c341e2..94213cb 100644
+--- a/crates/remote/src/transport/ssh_ios.rs
++++ b/crates/remote/src/transport/ssh_ios.rs
+@@ -22,6 +22,7 @@ use russh::{
+     keys::{Algorithm, HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate},
+ };
+ use sha2::{Digest as _, Sha256};
++use smol::channel::{Receiver as SmolReceiver, Sender as SmolSender};
+ use std::{
+     fs::{self, File, OpenOptions},
+     io::{Read as _, Write as _},
+@@ -58,6 +59,119 @@ pub struct SshServerProgress {
+     total: AtomicU64,
+ }
+ 
++/// A PTY on the selected Machine, carried over its own authenticated SSH session.
++pub struct SshTerminalSession {
++    pub input_tx: SmolSender<Vec<u8>>,
++    pub resize_tx: SmolSender<(u32, u32)>,
++    pub output_rx: SmolReceiver<Vec<u8>>,
++}
++
++pub async fn open_ssh_terminal(
++    options: SshConnectionOptions,
++    working_directory: Option<PathBuf>,
++) -> Result<SshTerminalSession> {
++    let (input_tx, input_rx) = smol::channel::unbounded();
++    let (resize_tx, resize_rx) = smol::channel::unbounded();
++    let (output_tx, output_rx) = smol::channel::unbounded();
++    let (ready_tx, ready_rx) = smol::channel::bounded::<std::result::Result<(), String>>(1);
++
++    std::thread::Builder::new()
++        .name("ized-ssh-terminal".into())
++        .spawn(move || {
++            let result = run_ssh_terminal(
++                options,
++                working_directory,
++                input_rx,
++                resize_rx,
++                output_tx.clone(),
++                ready_tx.clone(),
++            );
++            if let Err(error) = result {
++                let message = format!("{error:#}");
++                if ready_tx.try_send(Err(message.clone())).is_err() {
++                    output_tx
++                        .send_blocking(format!("\r\n[SSH terminal: {message}]\r\n").into_bytes())
++                        .ok();
++                }
++            }
++        })?;
++
++    ready_rx
++        .recv()
++        .await
++        .context("SSH terminal stopped before opening")?
++        .map_err(anyhow::Error::msg)?;
++    Ok(SshTerminalSession {
++        input_tx,
++        resize_tx,
++        output_rx,
++    })
++}
++
++fn run_ssh_terminal(
++    options: SshConnectionOptions,
++    working_directory: Option<PathBuf>,
++    input_rx: SmolReceiver<Vec<u8>>,
++    resize_rx: SmolReceiver<(u32, u32)>,
++    output_tx: SmolSender<Vec<u8>>,
++    ready_tx: SmolSender<std::result::Result<(), String>>,
++) -> Result<()> {
++    let (runtime, handle) = connect_with_inactivity_timeout(&options, None)?;
++    runtime.block_on(async move {
++        let mut channel = handle.channel_open_session().await?;
++        channel
++            .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[])
++            .await?;
++        let command = if let Some(path) = working_directory {
++            let path = path.to_string_lossy().replace('\'', "'\\''");
++            format!("cd '{path}' && exec \"${{SHELL:-/bin/sh}}\" -l")
++        } else {
++            "exec \"${SHELL:-/bin/sh}\" -l".to_string()
++        };
++        channel.exec(true, command).await?;
++        ready_tx.send(Ok(())).await.ok();
++
++        let mut input_open = true;
++        let mut resize_open = true;
++        let mut exit_status = None;
++        loop {
++            tokio::select! {
++                message = channel.wait() => match message {
++                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
++                        if output_tx.send(data.as_ref().to_vec()).await.is_err() {
++                            log::info!("iPad SSH terminal output receiver closed");
++                            break;
++                        }
++                    }
++                    Some(ChannelMsg::ExitStatus { exit_status: code }) => exit_status = Some(code),
++                    Some(_) => {}
++                    None => {
++                        log::info!("iPad SSH terminal channel closed with status {exit_status:?}");
++                        break;
++                    }
++                },
++                input = input_rx.recv(), if input_open => match input {
++                    Ok(input) => channel.data_bytes(input).await?,
++                    Err(_) => {
++                        log::info!("iPad SSH terminal input sender closed");
++                        input_open = false;
++                        break;
++                    }
++                },
++                resize = resize_rx.recv(), if resize_open => match resize {
++                    Ok((columns, rows)) => channel.window_change(columns, rows, 0, 0).await?,
++                    Err(_) => {
++                        log::info!("iPad SSH terminal resize sender closed");
++                        resize_open = false;
++                    },
++                },
++            }
++        }
++        output_tx.send(b"\r\n[Terminal session ended]\r\n".to_vec()).await.ok();
++        anyhow::Ok(())
++    })
++}
++
+ impl SshServerProgress {
+     pub fn snapshot(&self) -> (SshServerPhase, u64, u64) {
+         let phase = match self.phase.load(Ordering::Relaxed) {
+@@ -202,6 +316,13 @@ impl IosSshRemoteConnection {
+ 
+ fn connect(
+     options: &SshConnectionOptions,
++) -> Result<(tokio::runtime::Runtime, client::Handle<HostKeyVerifier>)> {
++    connect_with_inactivity_timeout(options, Some(Duration::from_secs(30)))
++}
++
++fn connect_with_inactivity_timeout(
++    options: &SshConnectionOptions,
++    inactivity_timeout: Option<Duration>,
+ ) -> Result<(tokio::runtime::Runtime, client::Handle<HostKeyVerifier>)> {
+     let ssh_dir = ipad_ssh_dir()?;
+     let host = options.host.to_string();
+@@ -219,7 +340,7 @@ fn connect(
+         .build()?;
+     let handle = runtime.block_on(async {
+         let config = Arc::new(client::Config {
+-            inactivity_timeout: Some(Duration::from_secs(30)),
++            inactivity_timeout,
+             ..Default::default()
+         });
+         let mut handle = client::connect(
+diff --git a/crates/terminal/src/terminal.rs b/crates/terminal/src/terminal.rs
+index b620f5f..20dea59 100644
+--- a/crates/terminal/src/terminal.rs
++++ b/crates/terminal/src/terminal.rs
+@@ -345,6 +345,14 @@ pub const MAX_SCROLL_HISTORY_LINES: usize = 100_000;
+ pub struct TerminalBuilder {
+     terminal: Terminal,
+     events_rx: UnboundedReceiver<AlacTermEvent>,
++    remote_output_rx: Option<Receiver<Vec<u8>>>,
++}
++
++/// Channels for a PTY hosted outside this process, such as an iPad SSH session.
++pub struct RemoteTerminalChannels {
++    pub input_tx: Sender<Vec<u8>>,
++    pub resize_tx: Sender<(u32, u32)>,
++    pub output_rx: Receiver<Vec<u8>>,
+ }
+ 
+ impl TerminalBuilder {
+@@ -428,9 +436,38 @@ impl TerminalBuilder {
+         Ok(TerminalBuilder {
+             terminal,
+             events_rx,
++            remote_output_rx: None,
+         })
+     }
+ 
++    pub fn new_remote(
++        channels: RemoteTerminalChannels,
++        title: String,
++        cursor_shape: CursorShape,
++        alternate_scroll: AlternateScroll,
++        max_scroll_history_lines: Option<usize>,
++        window_id: u64,
++        background_executor: &BackgroundExecutor,
++        path_style: PathStyle,
++    ) -> Result<TerminalBuilder> {
++        let mut builder = Self::new_display_only(
++            cursor_shape,
++            alternate_scroll,
++            max_scroll_history_lines,
++            window_id,
++            background_executor,
++            path_style,
++        )?;
++        builder.terminal.terminal_type = TerminalType::Remote {
++            input_tx: channels.input_tx,
++            resize_tx: channels.resize_tx,
++        };
++        builder.terminal.title_override = Some(title);
++        builder.terminal.is_remote_terminal = true;
++        builder.remote_output_rx = Some(channels.output_rx);
++        Ok(builder)
++    }
++
+     pub fn new(
+         working_directory: Option<PathBuf>,
+         task: Option<TaskState>,
+@@ -683,6 +720,7 @@ impl TerminalBuilder {
+             Ok(TerminalBuilder {
+                 terminal,
+                 events_rx,
++                remote_output_rx: None,
+             })
+         };
+         // the thread we spawn things on has an effect on signal handling
+@@ -694,6 +732,15 @@ impl TerminalBuilder {
+     }
+ 
+     pub fn subscribe(mut self, cx: &Context<Terminal>) -> Terminal {
++        if let Some(output_rx) = self.remote_output_rx.take() {
++            cx.spawn(async move |terminal, cx| {
++                while let Ok(bytes) = output_rx.recv().await {
++                    terminal.update(cx, |terminal, cx| terminal.write_pty_output(&bytes, cx))?;
++                }
++                anyhow::Ok(())
++            })
++            .detach();
++        }
+         //Event loop
+         self.terminal.event_loop_task = cx.spawn(async move |terminal, cx| {
+             while let Some(event) = self.events_rx.next().await {
+@@ -846,6 +893,10 @@ enum TerminalType {
+         pty_tx: Notifier,
+         info: Arc<PtyProcessInfo>,
+     },
++    Remote {
++        input_tx: Sender<Vec<u8>>,
++        resize_tx: Sender<(u32, u32)>,
++    },
+     DisplayOnly,
+ }
+ 
+@@ -1034,6 +1085,10 @@ impl Terminal {
+ 
+                 if let TerminalType::Pty { pty_tx, .. } = &self.terminal_type {
+                     pty_tx.0.send(Msg::Resize(new_bounds.into())).ok();
++                } else if let TerminalType::Remote { resize_tx, .. } = &self.terminal_type {
++                    resize_tx
++                        .try_send((new_bounds.num_columns() as u32, new_bounds.num_lines() as u32))
++                        .ok();
+                 }
+ 
+                 term.resize(new_bounds);
+@@ -1328,6 +1383,18 @@ impl Terminal {
+         cx.emit(Event::Wakeup);
+     }
+ 
++    /// Feed output from a real remote PTY without changing its line endings.
++    pub fn write_pty_output(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
++        let mut processor = alacritty_terminal::vte::ansi::Processor::<
++            alacritty_terminal::vte::ansi::StdSyncHandler,
++        >::new();
++        {
++            let mut term = self.term.lock();
++            processor.advance(&mut *term, bytes);
++        }
++        cx.emit(Event::Wakeup);
++    }
++
+     pub fn total_lines(&self) -> usize {
+         self.term.lock_unfair().total_lines()
+     }
+@@ -1447,8 +1514,9 @@ impl Terminal {
+     /// Write the Input payload to the PTY, if applicable.
+     /// (This is a no-op for display-only terminals.)
+     fn write_to_pty(&self, input: impl Into<Cow<'static, [u8]>>) {
+-        if let TerminalType::Pty { pty_tx, .. } = &self.terminal_type {
+-            let input = input.into();
++        let input = input.into();
++        match &self.terminal_type {
++            TerminalType::Pty { pty_tx, .. } => {
+             if log::log_enabled!(log::Level::Debug) {
+                 if let Ok(str) = str::from_utf8(&input) {
+                     log::debug!("Writing to PTY: {:?}", str);
+@@ -1457,6 +1525,11 @@ impl Terminal {
+                 }
+             }
+             pty_tx.notify(input);
++            }
++            TerminalType::Remote { input_tx, .. } => {
++                input_tx.try_send(input.into_owned()).ok();
++            }
++            TerminalType::DisplayOnly => {}
+         }
+     }
+ 
+@@ -2128,7 +2201,7 @@ impl Terminal {
+                 .read()
+                 .as_ref()
+                 .map(|process| process.cwd.clone()),
+-            TerminalType::DisplayOnly => None,
++            TerminalType::Remote { .. } | TerminalType::DisplayOnly => None,
+         }
+     }
+ 
+@@ -2179,7 +2252,7 @@ impl Terminal {
+                             format!("{process_file} — {process_name}")
+                         })
+                         .unwrap_or_else(|| "Terminal".to_string()),
+-                    TerminalType::DisplayOnly => "Terminal".to_string(),
++                    TerminalType::Remote { .. } | TerminalType::DisplayOnly => "Terminal".to_string(),
+                 }),
+         }
+     }
+@@ -2201,14 +2274,14 @@ impl Terminal {
+     pub fn pid(&self) -> Option<sysinfo::Pid> {
+         match &self.terminal_type {
+             TerminalType::Pty { info, .. } => info.pid(),
+-            TerminalType::DisplayOnly => None,
++            TerminalType::Remote { .. } | TerminalType::DisplayOnly => None,
+         }
+     }
+ 
+     pub fn pid_getter(&self) -> Option<&ProcessIdGetter> {
+         match &self.terminal_type {
+             TerminalType::Pty { info, .. } => Some(info.pid_getter()),
+-            TerminalType::DisplayOnly => None,
++            TerminalType::Remote { .. } | TerminalType::DisplayOnly => None,
+         }
+     }
+ 

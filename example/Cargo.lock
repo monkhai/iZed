@@ -4782,6 +4782,7 @@ dependencies = [
  "session",
  "settings",
  "smol",
+ "terminal_view",
  "theme",
  "theme_settings",
  "ui",
@@ -11579,6 +11580,42 @@ dependencies = [
  "urlencoding",
  "util",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "terminal_view"
+version = "0.1.0"
+source = "git+https://github.com/zed-industries/zed?rev=5688167d224b5eca54875d49afb8bfd73a07915a#5688167d224b5eca54875d49afb8bfd73a07915a"
+dependencies = [
+ "anyhow",
+ "async-recursion",
+ "breadcrumbs",
+ "collections",
+ "db",
+ "dirs",
+ "editor",
+ "futures",
+ "gpui",
+ "itertools 0.14.0",
+ "language",
+ "log",
+ "menu",
+ "pretty_assertions",
+ "project",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "settings",
+ "shellexpand",
+ "task",
+ "terminal",
+ "theme",
+ "theme_settings",
+ "ui",
+ "util",
+ "workspace",
+ "zed_actions",
 ]
 
 [[package]]
