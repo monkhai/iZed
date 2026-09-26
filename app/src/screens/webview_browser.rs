@@ -16,7 +16,7 @@ const APP_BAR_HEIGHT: f32 = 56.0;
 /// Thread-local state for the in-app WebView, decoupled from Router.
 pub struct WebViewState {
     pub url: String,
-    pub handle: Option<gpui_mobile::packages::webview::WebViewHandle>,
+    pub handle: Option<ized_platform::packages::webview::WebViewHandle>,
 }
 
 impl Default for WebViewState {
@@ -39,7 +39,7 @@ pub fn dismiss_webview() -> bool {
     WEBVIEW_STATE.with(|s| {
         let mut state = s.borrow_mut();
         if let Some(handle) = state.handle.take() {
-            let _ = gpui_mobile::packages::webview::dismiss(handle);
+            let _ = ized_platform::packages::webview::dismiss(handle);
             true
         } else {
             false
@@ -82,7 +82,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             WEBVIEW_STATE.with(|s| {
                                 let state = s.borrow();
                                 if let Some(ref h) = state.handle {
-                                    let _ = gpui_mobile::packages::webview::go_back(h);
+                                    let _ = ized_platform::packages::webview::go_back(h);
                                 }
                             });
                             cx.notify();
@@ -96,7 +96,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             WEBVIEW_STATE.with(|s| {
                                 let state = s.borrow();
                                 if let Some(ref h) = state.handle {
-                                    let _ = gpui_mobile::packages::webview::reload(h);
+                                    let _ = ized_platform::packages::webview::reload(h);
                                 }
                             });
                             cx.notify();
@@ -126,7 +126,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             WEBVIEW_STATE.with(|s| {
                                 let mut state = s.borrow_mut();
                                 if let Some(h) = state.handle.take() {
-                                    let _ = gpui_mobile::packages::webview::dismiss(h);
+                                    let _ = ized_platform::packages::webview::dismiss(h);
                                 }
                             });
                             cx.notify();
@@ -182,10 +182,10 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
                             let top_offset = this.safe_area.top + APP_BAR_HEIGHT;
-                            let mut settings = gpui_mobile::packages::webview::WebViewSettings::default();
+                            let mut settings = ized_platform::packages::webview::WebViewSettings::default();
                             settings.top_offset = top_offset;
                             let html = r#"<html><body style="background:#1e1f25;color:#e2e2e9;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;flex-direction:column"><h1>GPUI WebView</h1><p>Custom HTML loaded successfully</p><button onclick="document.body.style.background='#4285F4'" style="padding:12px 24px;font-size:16px;border:none;border-radius:8px;background:#34A853;color:white;margin-top:16px">Change Color</button></body></html>"#;
-                            match gpui_mobile::packages::webview::load_html(html, &settings) {
+                            match ized_platform::packages::webview::load_html(html, &settings) {
                                 Ok(handle) => {
                                     WEBVIEW_STATE.with(|s| {
                                         let mut state = s.borrow_mut();
@@ -267,12 +267,12 @@ fn open_url_btn(
                 WEBVIEW_STATE.with(|s| {
                     let mut state = s.borrow_mut();
                     if let Some(h) = state.handle.take() {
-                        let _ = gpui_mobile::packages::webview::dismiss(h);
+                        let _ = ized_platform::packages::webview::dismiss(h);
                     }
                 });
-                let mut settings = gpui_mobile::packages::webview::WebViewSettings::default();
+                let mut settings = ized_platform::packages::webview::WebViewSettings::default();
                 settings.top_offset = top_offset;
-                match gpui_mobile::packages::webview::load_url(url, &settings) {
+                match ized_platform::packages::webview::load_url(url, &settings) {
                     Ok(handle) => {
                         WEBVIEW_STATE.with(|s| {
                             let mut state = s.borrow_mut();

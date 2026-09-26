@@ -6146,39 +6146,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-mobile"
-version = "0.1.0"
-dependencies = [
- "android-activity",
- "android_logger",
- "anyhow",
- "block2",
- "core-foundation 0.10.0",
- "core-foundation-sys",
- "core-graphics 0.24.0",
- "core-text",
- "futures",
- "gpui",
- "gpui_wgpu",
- "jni 0.22.4",
- "libc",
- "log",
- "ndk",
- "ndk-context",
- "ndk-sys",
- "objc2",
- "parking_lot",
- "pathfinder_geometry",
- "raw-window-handle",
- "rustc-hash 2.1.3",
- "security-framework 3.7.0",
- "smallvec",
- "uuid",
- "wgpu",
- "zed-font-kit",
-]
-
-[[package]]
 name = "gpui_macros"
 version = "0.1.0"
 source = "git+https://github.com/zed-industries/zed?rev=5688167d224b5eca54875d49afb8bfd73a07915a#5688167d224b5eca54875d49afb8bfd73a07915a"
@@ -7235,9 +7202,9 @@ dependencies = [
  "fs",
  "futures",
  "gpui",
- "gpui-mobile",
  "gpui_tokio",
  "grammars",
+ "ized-platform",
  "language",
  "language_model",
  "language_models",
@@ -7269,6 +7236,39 @@ dependencies = [
  "workspace",
  "zed-reqwest",
  "zed_actions",
+]
+
+[[package]]
+name = "ized-platform"
+version = "0.1.0"
+dependencies = [
+ "android-activity",
+ "android_logger",
+ "anyhow",
+ "block2",
+ "core-foundation 0.10.0",
+ "core-foundation-sys",
+ "core-graphics 0.24.0",
+ "core-text",
+ "futures",
+ "gpui",
+ "gpui_wgpu",
+ "jni 0.22.4",
+ "libc",
+ "log",
+ "ndk",
+ "ndk-context",
+ "ndk-sys",
+ "objc2",
+ "parking_lot",
+ "pathfinder_geometry",
+ "raw-window-handle",
+ "rustc-hash 2.1.3",
+ "security-framework 3.7.0",
+ "smallvec",
+ "uuid",
+ "wgpu",
+ "zed-font-kit",
 ]
 
 [[package]]

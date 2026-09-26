@@ -37,7 +37,7 @@ const SURFACE1: u32 = 0x45475a;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let loaders = shared::skeleton_loaders(true); // dark mode
 /// ```

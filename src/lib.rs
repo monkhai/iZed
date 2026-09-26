@@ -1,4 +1,4 @@
-//! GPUI Mobile Platform Support
+//! iZed GPUI Platform
 //!
 //! This crate provides mobile platform support for GPUI, enabling GPUI applications
 //! to run on iOS and Android devices with native performance.
@@ -49,7 +49,7 @@
 //! ```rust,no_run
 //! # #[cfg(target_os = "ios")]
 //! # {
-//! use gpui_mobile::current_platform;
+//! use ized_platform::current_platform;
 //! let platform = current_platform(false);
 //! // Hand `platform` to GPUI's Application initialiser.
 //! # }
@@ -60,7 +60,7 @@
 //! ```rust,no_run
 //! # #[cfg(target_os = "android")]
 //! # {
-//! use gpui_mobile::current_platform;
+//! use ized_platform::current_platform;
 //! let platform = current_platform(false);
 //! # }
 //! ```
@@ -350,7 +350,7 @@ pub use target_platform::{target_platform, TargetPlatform, DEFAULT_PLATFORM};
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn current_platform(_headless: bool) -> ! {
     panic!(
-        "gpui-mobile: `current_platform` is only available when compiled for \
+        "ized-platform: `current_platform` is only available when compiled for \
          `target_os = \"ios\"` or `target_os = \"android\"`."
     );
 }

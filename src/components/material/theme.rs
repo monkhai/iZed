@@ -10,7 +10,7 @@
 //! # Usage
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::theme::{MaterialTheme, color};
+//! use ized_platform::components::material::theme::{MaterialTheme, color};
 //!
 //! let theme = MaterialTheme::dark();
 //! let bg = color(theme.surface);
@@ -29,7 +29,7 @@ use gpui::Hsla;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::theme::color;
+/// use ized_platform::components::material::theme::color;
 ///
 /// let bg = color(0x6750A4); // primary purple as Hsla
 /// ```
@@ -393,7 +393,7 @@ pub enum StateLayer {
 ///
 /// Usage:
 /// ```rust,ignore
-/// use gpui_mobile::components::material::theme::TypeScale;
+/// use ized_platform::components::material::theme::TypeScale;
 ///
 /// let size = TypeScale::BODY_LARGE; // 16.0
 /// ```

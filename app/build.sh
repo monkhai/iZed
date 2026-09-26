@@ -35,9 +35,9 @@ set -euo pipefail
 # ── Resolve paths ────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# SCRIPT_DIR = gpui/app
+# SCRIPT_DIR = ized/app
 GPUI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-# GPUI_ROOT  = gpui/
+# GPUI_ROOT  = ized/
 APP_DIR="$SCRIPT_DIR"
 IOS_DIR="$APP_DIR/ios"
 ANDROID_GRADLE_DIR="$APP_DIR/android/gradle"
@@ -184,7 +184,7 @@ build_ios() {
         fi
     fi
 
-    # ── Build the iZed app crate (and its gpui-mobile dependency) ─────────
+    # ── Build the iZed app crate (and its ized-platform dependency) ─────────
     step "Building iZed app for ${rust_target} (${PROFILE})"
 
     cd "$APP_DIR"
@@ -316,7 +316,7 @@ _ios_run_simulator() {
     xcrun simctl install "$sim_id" "$app_path"
 
     info "Launching app..."
-    xcrun simctl launch "$sim_id" dev.gpui.mobile.example
+    xcrun simctl launch "$sim_id" com.monkhai.ized
     info "App launched on simulator! 🚀"
 }
 
@@ -354,7 +354,7 @@ _ios_run_device() {
         info "Launching app on device..."
         xcrun devicectl device process launch \
             --device "$device_id" \
-            dev.gpui.mobile.example \
+            com.monkhai.ized \
             2>&1 || true
 
         info "App launched on device! 🚀"
@@ -523,7 +523,7 @@ _android_install_and_launch() {
 
     info "Launching app..."
     adb shell am start \
-        -n "dev.gpui.mobile.app/dev.gpui.mobile.GpuiActivity" \
+        -n "com.monkhai.ized/com.monkhai.ized.platform.GpuiActivity" \
         -a android.intent.action.MAIN \
         -c android.intent.category.LAUNCHER \
         2>&1

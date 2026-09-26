@@ -56,7 +56,7 @@ pub fn render(router: &Router) -> impl IntoElement {
                     div()
                         .text_xl()
                         .text_color(rgb(text_color))
-                        .child("GPUI Mobile Example"),
+                        .child("iZed Platform Demo"),
                 )
                 .child(div().text_sm().text_color(rgb(sub_text)).child("v0.1.0")),
         )

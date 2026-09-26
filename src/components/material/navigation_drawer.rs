@@ -21,8 +21,8 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::navigation_drawer::*;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::navigation_drawer::*;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -473,8 +473,8 @@ impl IntoElement for NavigationDrawer {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::navigation_drawer::*;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::navigation_drawer::*;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -586,7 +586,7 @@ impl IntoElement for ModalNavigationDrawer {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::navigation_drawer;
+/// use ized_platform::components::material::navigation_drawer;
 ///
 /// let demo = navigation_drawer::navigation_drawer_demo(true); // dark mode
 /// ```

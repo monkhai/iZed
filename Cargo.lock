@@ -1921,7 +1921,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-mobile"
+name = "ized-platform"
 version = "0.1.0"
 dependencies = [
  "android-activity",

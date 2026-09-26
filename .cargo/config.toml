@@ -1,4 +1,4 @@
-# Cargo configuration for gpui-mobile
+# Cargo configuration for ized-platform
 #
 # This file configures cross-compilation for Android targets.
 # The RUST_FONTCONFIG_DLOPEN=on env var prevents yeslogic-fontconfig-sys

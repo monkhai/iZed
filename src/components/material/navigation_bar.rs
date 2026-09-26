@@ -15,7 +15,7 @@
 //! item's handler can be created via `cx.listener(move |this, ...| { ... })`.
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::NavigationBarBuilder;
+//! use ized_platform::components::material::NavigationBarBuilder;
 //!
 //! let bar = NavigationBarBuilder::new(dark)
 //!     .item("🏠", "Home", current == Screen::Home, cx.listener(move |this, _, _, cx| {
@@ -88,7 +88,7 @@ impl NavigationItem {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::NavigationBarBuilder;
+/// use ized_platform::components::material::NavigationBarBuilder;
 ///
 /// let bar = NavigationBarBuilder::new(true) // dark mode
 ///     .item("🏠", "Home", true, cx.listener(move |this, _, _, cx| {
@@ -220,7 +220,7 @@ impl NavigationBarBuilder {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let demo = material::navigation_bar_demo(true); // dark mode
 /// ```

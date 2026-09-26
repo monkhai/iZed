@@ -16,8 +16,8 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::navigation_rail::NavigationRail;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::navigation_rail::NavigationRail;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -539,7 +539,7 @@ impl IntoElement for NavigationRail {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::navigation_rail;
+/// use ized_platform::components::material::navigation_rail;
 ///
 /// let demo = navigation_rail::navigation_rail_demo(true); // dark mode
 /// ```

@@ -56,8 +56,8 @@ pub enum ListTileDensity {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::ListTile;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::ListTile;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -424,8 +424,8 @@ impl IntoElement for ListTile {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::Divider;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::Divider;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -548,8 +548,8 @@ pub enum BadgeType {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::Badge;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::Badge;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -695,8 +695,8 @@ pub enum TooltipVariant {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::Tooltip;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::Tooltip;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -907,8 +907,8 @@ struct SegmentEntry {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::SegmentedButton;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::SegmentedButton;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -1124,8 +1124,8 @@ pub enum ChipType {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::{Chip, ChipType};
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::{Chip, ChipType};
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -1410,8 +1410,8 @@ struct BottomAppBarIcon {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::BottomAppBar;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::BottomAppBar;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -1572,8 +1572,8 @@ impl IntoElement for BottomAppBar {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile::ExpansionTile;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::list_tile::ExpansionTile;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -1859,7 +1859,7 @@ pub fn chips(dark: bool) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::list_tile;
+/// use ized_platform::components::material::list_tile;
 ///
 /// let demo = list_tile::list_tile_demo(true); // dark mode
 /// ```

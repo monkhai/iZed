@@ -11,8 +11,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::app_bar::TopAppBar;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::app_bar::TopAppBar;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -602,7 +602,7 @@ impl IntoElement for TopAppBar {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::app_bar;
+/// use ized_platform::components::material::app_bar;
 ///
 /// let demo = app_bar::app_bar_demo(true); // dark mode
 /// ```

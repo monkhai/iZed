@@ -35,7 +35,7 @@ use gpui::{div, prelude::*, px, rgb};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let item = material::sheet_item("📧", "Email", 0x1c1b1f, 0x49454f);
 /// ```
@@ -92,7 +92,7 @@ pub fn sheet_item(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let sheet = material::bottom_sheet(true); // dark mode
 /// ```

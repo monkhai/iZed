@@ -32,7 +32,7 @@ For model verification, the iPad debug log records the requested model ID and th
 
 ## How it is built
 
-This repository combines an iOS GPUI platform layer with a small iPad host for Zed's workspace. It is based on [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) and uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The source changes needed for iPad, SSH, and language tools are kept in patches, rather than copying the full upstream repositories here.
+This repository contains iZed's iPad app and its GPUI platform integration. The platform began from [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile), and the app uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The source changes needed for iPad, SSH, and language tools are kept in patches, rather than copying the full upstream repositories here.
 
 | Path | Purpose |
 | --- | --- |
@@ -73,7 +73,7 @@ This path is currently for macOS developers comfortable with Xcode, Rust, and SS
    open iZed.xcodeproj
    ```
 
-4. Select your iPad and signing team in Xcode, then Run. Use a unique bundle identifier for your own build. The default identifier in the project specification is only a development placeholder.
+4. Select your iPad and signing team in Xcode, then Run. Forks should use their own bundle identifier; the project specification uses `com.monkhai.ized`.
 5. In iZed, add a Machine using `user@host`, check its SSH identity, and follow the on-screen access instructions. iZed will provision its remote server and let you choose a project directory.
 
 The app currently uses key-based SSH access. Keep your SSH credentials and Machine configuration out of the repository; iZed stores its saved Machines on the iPad.

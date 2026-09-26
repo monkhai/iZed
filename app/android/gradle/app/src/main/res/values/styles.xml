@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Application theme for the GPUI Mobile Android Example.
+  Application theme for the iZed Platform Demo.
 
   The key fix here is `android:windowBackground` set to white.  The old
   theme (`Theme.NoTitleBar.Fullscreen`) used a black window background,
@@ -20,7 +20,7 @@
 -->
 <resources>
 
-    <!-- Base application theme for the GPUI example app. -->
+    <!-- Base application theme for the iZed platform demo. -->
     <style name="GpuiTheme" parent="@android:style/Theme.NoTitleBar">
         <!-- Match the app's dark theme surface color (0x121318) to eliminate
              any flash between the system splash and the first rendered frame. -->

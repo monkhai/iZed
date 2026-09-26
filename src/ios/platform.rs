@@ -110,7 +110,7 @@ impl Platform for IosPlatform {
             super::ffi::set_finish_launching_callback(callback);
         }
 
-        log::info!("GPUI iOS: Platform::run() completed, waiting for app delegate callback");
+        log::info!("iZed iOS: Platform::run() completed, waiting for app delegate callback");
     }
 
     fn quit(&self) {
@@ -306,7 +306,7 @@ impl Platform for IosPlatform {
             let pasteboard: *mut AnyObject = msg_send![class!(UIPasteboard), generalPasteboard];
             if let Some(text) = item.text() {
                 let Ok(text) = std::ffi::CString::new(text) else {
-                    log::warn!("GPUI iOS: Clipboard text contains a NUL byte");
+                    log::warn!("iZed iOS: Clipboard text contains a NUL byte");
                     return;
                 };
                 let ns_string: *mut AnyObject =

@@ -15,7 +15,7 @@ use gpui::{div, hsla, linear_color_stop, linear_gradient, prelude::*, px};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let card = glass::hero_card(true); // dark mode
 /// ```

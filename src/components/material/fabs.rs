@@ -26,7 +26,7 @@ use gpui::{div, prelude::*, px, rgb};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let fab_row = material::fabs(true); // dark mode
 /// ```

@@ -2,11 +2,11 @@
 //! composed into a realistic form layout with interactive state.
 
 use gpui::{div, prelude::*, px, rgb, Context, MouseDownEvent};
-use gpui_mobile::components::material::{
+use ized_platform::components::material::{
     Card, Checkbox, CircularProgressIndicator, FilledButton, MaterialTheme, OutlinedButton, Radio,
     RadioGroup, Slider, Switch, TextButton, TextField, TextInput,
 };
-use gpui_mobile::KeyboardType;
+use ized_platform::KeyboardType;
 use std::cell::RefCell;
 
 use super::Router;
@@ -87,13 +87,13 @@ thread_local! {
 
 /// Install the keyboard callback that pushes typed text into PENDING_TEXT.
 fn install_keyboard_callback() {
-    gpui_mobile::set_text_input_callback(Some(Box::new(|text: &str| {
+    ized_platform::set_text_input_callback(Some(Box::new(|text: &str| {
         PENDING_TEXT.with(|pending| {
             pending.borrow_mut().push(text.to_string());
         });
     })));
     // Mark dirty so the next frame picks up the focused field change.
-    gpui_mobile::TEXT_INPUT_DIRTY.store(true, std::sync::atomic::Ordering::Release);
+    ized_platform::TEXT_INPUT_DIRTY.store(true, std::sync::atomic::Ordering::Release);
 }
 
 /// Approximate average character width in logical pixels for tap-to-cursor.
@@ -112,8 +112,8 @@ pub fn dismiss_form_keyboard() {
             state.form.full_name.selection = None;
             state.form.email.selection = None;
             state.form.phone.selection = None;
-            gpui_mobile::hide_keyboard();
-            gpui_mobile::set_text_input_callback(None);
+            ized_platform::hide_keyboard();
+            ized_platform::set_text_input_callback(None);
         }
     });
 }
@@ -323,7 +323,7 @@ pub fn render(router: &Router, cx: &mut Context<Router>) -> impl IntoElement {
                                 TAPPED_X
                                     .with(|x| *x.borrow_mut() = Some(event.position.x.as_f32()));
                                 install_keyboard_callback();
-                                gpui_mobile::show_keyboard_with_type(KeyboardType::Default);
+                                ized_platform::show_keyboard_with_type(KeyboardType::Default);
                             })
                             .render(cx),
                     )
@@ -342,7 +342,7 @@ pub fn render(router: &Router, cx: &mut Context<Router>) -> impl IntoElement {
                                 TAPPED_X
                                     .with(|x| *x.borrow_mut() = Some(event.position.x.as_f32()));
                                 install_keyboard_callback();
-                                gpui_mobile::show_keyboard_with_type(KeyboardType::EmailAddress);
+                                ized_platform::show_keyboard_with_type(KeyboardType::EmailAddress);
                             })
                             .render(cx),
                     )
@@ -361,7 +361,7 @@ pub fn render(router: &Router, cx: &mut Context<Router>) -> impl IntoElement {
                                 TAPPED_X
                                     .with(|x| *x.borrow_mut() = Some(event.position.x.as_f32()));
                                 install_keyboard_callback();
-                                gpui_mobile::show_keyboard_with_type(KeyboardType::Phone);
+                                ized_platform::show_keyboard_with_type(KeyboardType::Phone);
                             })
                             .render(cx),
                     ),

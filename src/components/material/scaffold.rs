@@ -8,10 +8,10 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::scaffold::Scaffold;
-//! use gpui_mobile::components::material::app_bar::TopAppBar;
-//! use gpui_mobile::components::material::navigation_bar::NavigationBarBuilder;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::scaffold::Scaffold;
+//! use ized_platform::components::material::app_bar::TopAppBar;
+//! use ized_platform::components::material::navigation_bar::NavigationBarBuilder;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -293,7 +293,7 @@ impl IntoElement for Scaffold {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::scaffold;
+/// use ized_platform::components::material::scaffold;
 ///
 /// let demo = scaffold::scaffold_demo(true); // dark mode
 /// ```

@@ -25,7 +25,7 @@ fn blend_rgb(a: u32, b: u32, t: f32) -> u32 {
 /// An interactive Material Design 3 text input field.
 ///
 /// When tapped, this component triggers the software keyboard via
-/// `gpui_mobile::show_keyboard()`. Text state is managed externally
+/// `ized_platform::show_keyboard()`. Text state is managed externally
 /// by the parent component through the `on_change` callback.
 ///
 /// # Example
@@ -133,7 +133,7 @@ impl<V: 'static> TextInput<V> {
 
     /// Set a callback for when the field is tapped.
     ///
-    /// The callback should call `gpui_mobile::show_keyboard()` and set
+    /// The callback should call `ized_platform::show_keyboard()` and set
     /// the focused field state.
     pub fn on_tap(
         mut self,

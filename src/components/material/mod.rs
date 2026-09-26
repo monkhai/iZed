@@ -85,10 +85,10 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::theme::MaterialTheme;
-//! use gpui_mobile::components::material::button::FilledButton;
-//! use gpui_mobile::components::material::card::CardBuilder;
-//! use gpui_mobile::components::material::scaffold::Scaffold;
+//! use ized_platform::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::button::FilledButton;
+//! use ized_platform::components::material::card::CardBuilder;
+//! use ized_platform::components::material::scaffold::Scaffold;
 //!
 //! let theme = MaterialTheme::dark();
 //!

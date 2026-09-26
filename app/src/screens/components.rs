@@ -1,13 +1,13 @@
 //! Components showcase screen — Apple Glass & Material Design.
 //!
 //! This screen delegates to the component library in
-//! `gpui_mobile::components` — the glass, material, and shared modules
+//! `ized_platform::components` — the glass, material, and shared modules
 //! contain all the actual component implementations. This file just
 //! composes them into a single scrollable showcase layout.
 
 use gpui::{div, prelude::*, rgb};
 
-use gpui_mobile::components::{
+use ized_platform::components::{
     common::{design_language_header, section_label},
     glass, material, shared,
 };

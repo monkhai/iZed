@@ -18,7 +18,7 @@ use super::panel::{panel, separator};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let on  = glass::toggle(true, dark);
 /// let off = glass::toggle(false, dark);
@@ -127,7 +127,7 @@ pub fn settings_row(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let list = glass::settings_list(true); // dark mode
 /// ```

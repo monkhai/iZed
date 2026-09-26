@@ -1,4 +1,4 @@
-// GPUI iOS Example - Main Entry Point
+// iZed iOS App - Main Entry Point
 //
 // This is a minimal iOS app that demonstrates GPUI running on iOS.
 // When USE_GPUI_RUST is defined, it links against the GPUI Rust static library
@@ -9,7 +9,7 @@
 #import <QuartzCore/QuartzCore.h>
 
 // Define USE_GPUI_RUST to enable Rust GPUI integration
-// This requires linking against libgpui.a
+// This requires linking against iZed's Rust static libraries.
 #ifdef USE_GPUI_RUST
 #import "gpui_ios.h"
 #endif
@@ -92,7 +92,7 @@
     [self.view addSubview:self.metalView];
 
     self.statusLabel = [[UILabel alloc] init];
-    self.statusLabel.text = @"GPUI iOS\nMetal Fallback Mode";
+    self.statusLabel.text = @"iZed\nMetal Fallback Mode";
     self.statusLabel.numberOfLines = 0;
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.textColor = [UIColor colorWithRed:0.804 green:0.839 blue:0.957 alpha:1.0];
@@ -108,7 +108,7 @@
     self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(render)];
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
 
-    NSLog(@"GPUI iOS Fallback Mode Started");
+    NSLog(@"iZed Fallback Mode Started");
 }
 
 - (void)render {
@@ -147,13 +147,13 @@
 @implementation GPUIAppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    NSLog(@"GPUI iOS Application Launching...");
+    NSLog(@"iZed Application Launching...");
 #ifndef USE_GPUI_RUST
     // Fallback mode: create our own window with demo UI
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.window.rootViewController = [[GPUIFallbackViewController alloc] init];
     [self.window makeKeyAndVisible];
-    NSLog(@"GPUI iOS Application Launched in fallback mode");
+    NSLog(@"iZed Application Launched in fallback mode");
 #endif
 
     return YES;
@@ -168,7 +168,7 @@
 #endif
 
 - (void)applicationWillEnterForeground:(UIApplication *)application {
-    NSLog(@"GPUI iOS: Will enter foreground");
+    NSLog(@"iZed iOS: Will enter foreground");
 #ifdef USE_GPUI_RUST
     gpui_ios_will_enter_foreground(self.gpuiApp);
 
@@ -181,21 +181,21 @@
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application {
-    NSLog(@"GPUI iOS: Did become active");
+    NSLog(@"iZed iOS: Did become active");
 #ifdef USE_GPUI_RUST
     gpui_ios_did_become_active(self.gpuiApp);
 #endif
 }
 
 - (void)applicationWillResignActive:(UIApplication *)application {
-    NSLog(@"GPUI iOS: Will resign active");
+    NSLog(@"iZed iOS: Will resign active");
 #ifdef USE_GPUI_RUST
     gpui_ios_will_resign_active(self.gpuiApp);
 #endif
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application {
-    NSLog(@"GPUI iOS: Did enter background");
+    NSLog(@"iZed iOS: Did enter background");
 #ifdef USE_GPUI_RUST
     gpui_ios_did_enter_background(self.gpuiApp);
 
@@ -208,7 +208,7 @@
 }
 
 - (BOOL)application:(UIApplication *)application openURL:(NSURL *)url options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options {
-    NSLog(@"GPUI iOS: Open URL: %@", url);
+    NSLog(@"iZed iOS: Open URL: %@", url);
 #ifdef USE_GPUI_RUST
     NSString *urlString = [url absoluteString];
     gpui_ios_handle_open_url((__bridge void *)urlString);
@@ -217,7 +217,7 @@
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {
-    NSLog(@"GPUI iOS: Will terminate");
+    NSLog(@"iZed iOS: Will terminate");
 #ifdef USE_GPUI_RUST
     if (self.displayLink) {
         [self.displayLink invalidate];
@@ -241,7 +241,7 @@
     gpui_ios_register_app();
     self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(renderFrame)];
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
-    gpui_ios_run_demo();
+    gpui_ios_run_app();
 #endif
 }
 - (void)sceneDidBecomeActive:(UIScene *)scene {

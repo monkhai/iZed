@@ -1,7 +1,7 @@
 # iZed application host
 
-This crate contains the iPad app that hosts Zed's workspace on the GPUI Mobile
-iOS platform. Start with the [repository README](../README.md) for the current
+This crate contains the iPad app that hosts Zed's workspace on iZed's GPUI
+platform bridge. Start with the [repository README](../README.md) for the current
 feature list and physical iPad build instructions.
 
 - `src/ized.rs` contains the Machine picker and remote workspace setup.
@@ -10,5 +10,5 @@ feature list and physical iPad build instructions.
 - `ios/RemoteServers/` receives locally built server archives from
   `../scripts/prepare-zed.sh`; generated archives are ignored by Git.
 
-The Xcode project, scheme, and app display name are iZed. The GPUI platform
-APIs retain their upstream names.
+The Xcode project, scheme, app display name, and internal platform crate use
+iZed names. Upstream origins and licenses are credited in the repository README.

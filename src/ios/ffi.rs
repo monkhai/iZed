@@ -7,7 +7,7 @@
 //! ## Typical call sequence from Obj-C
 //!
 //! ```text
-//! gpui_ios_run_demo()          // sets up platform + invokes finish-launching
+//! gpui_ios_run_app()          // sets up platform + invokes finish-launching
 //! gpui_ios_get_window()        // retrieve the GPUI window pointer
 //! gpui_ios_request_frame(ptr)  // called every CADisplayLink tick
 //! ```
@@ -37,7 +37,7 @@ impl AssetSource for SharedAssetSource {
 /// Set the app's assets before `run_app` constructs its GPUI application.
 pub fn set_asset_source(source: impl AssetSource) {
     if IOS_ASSET_SOURCE.set(Arc::new(source)).is_err() {
-        log::warn!("GPUI iOS: asset source was already registered");
+        log::warn!("iZed iOS: asset source was already registered");
     }
 }
 
@@ -80,7 +80,7 @@ pub(crate) static IOS_WINDOW_LIST: OnceLock<WindowListWrapper> = OnceLock::new()
 /// Returns null if initialization fails.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_initialize() -> *mut c_void {
-    log::info!("GPUI iOS: Initializing");
+    log::info!("iZed iOS: Initializing");
 
     // Initialize the app state
     let state = IosAppState {
@@ -88,7 +88,7 @@ pub extern "C" fn gpui_ios_initialize() -> *mut c_void {
     };
 
     if IOS_APP_STATE.set(state).is_err() {
-        log::error!("GPUI iOS: Already initialized");
+        log::error!("iZed iOS: Already initialized");
         return std::ptr::null_mut();
     }
 
@@ -111,7 +111,7 @@ pub(crate) fn register_window(window: *const super::window::IosWindow) {
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
         unsafe {
             (*wrapper.0.get()).push(window);
-            log::info!("GPUI iOS: Registered window {:p}", window);
+            log::info!("iZed iOS: Registered window {:p}", window);
         }
     }
 }
@@ -126,12 +126,12 @@ pub extern "C" fn gpui_ios_get_window() -> *mut c_void {
         unsafe {
             let windows = &*wrapper.0.get();
             if let Some(&window) = windows.last() {
-                log::info!("GPUI iOS: Returning window {:p}", window);
+                log::info!("iZed iOS: Returning window {:p}", window);
                 return window as *mut c_void;
             }
         }
     }
-    log::warn!("GPUI iOS: No windows registered");
+    log::warn!("iZed iOS: No windows registered");
     std::ptr::null_mut()
 }
 
@@ -159,19 +159,19 @@ pub(crate) fn set_finish_launching_callback(callback: Box<dyn FnOnce()>) {
 /// This invokes the callback passed to Application::run().
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_finish_launching(_app_ptr: *mut c_void) {
-    log::info!("GPUI iOS: Did finish launching");
+    log::info!("iZed iOS: Did finish launching");
 
     if let Some(state) = IOS_APP_STATE.get() {
         // Safety: Only called from main thread
         let callback = unsafe { (*state.finish_launching.get()).take() };
         if let Some(callback) = callback {
-            log::info!("GPUI iOS: Invoking finish launching callback");
+            log::info!("iZed iOS: Invoking finish launching callback");
             callback();
         } else {
-            log::warn!("GPUI iOS: No finish launching callback registered");
+            log::warn!("iZed iOS: No finish launching callback registered");
         }
     } else {
-        log::error!("GPUI iOS: Not initialized");
+        log::error!("iZed iOS: Not initialized");
     }
 }
 
@@ -181,7 +181,7 @@ pub extern "C" fn gpui_ios_did_finish_launching(_app_ptr: *mut c_void) {
 /// This notifies all GPUI windows that the app is becoming active.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
-    log::info!("GPUI iOS: Will enter foreground");
+    log::info!("iZed iOS: Will enter foreground");
 
     // Notify all windows that they're becoming active
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -203,7 +203,7 @@ pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
 /// This indicates the app is now in the foreground and receiving events.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
-    log::info!("GPUI iOS: Did become active");
+    log::info!("iZed iOS: Did become active");
 
     // App is now fully active - windows should be notified
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -225,7 +225,7 @@ pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
 /// This indicates the app is about to become inactive (e.g., incoming call, switching apps).
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
-    log::info!("GPUI iOS: Will resign active");
+    log::info!("iZed iOS: Will resign active");
 
     // App is about to become inactive
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -248,7 +248,7 @@ pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
 /// shared resources. The app will be suspended shortly after this returns.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_enter_background(_app_ptr: *mut c_void) {
-    log::info!("GPUI iOS: Did enter background");
+    log::info!("iZed iOS: Did enter background");
 
     // Notify windows they're no longer visible
     if let Some(wrapper) = IOS_WINDOW_LIST.get() {
@@ -270,7 +270,7 @@ pub extern "C" fn gpui_ios_did_enter_background(_app_ptr: *mut c_void) {
 /// This is a good place to save any unsaved data.
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_will_terminate(_app_ptr: *mut c_void) {
-    log::info!("GPUI iOS: Will terminate");
+    log::info!("iZed iOS: Will terminate");
 
     // Quit callbacks would be invoked here if registered.
 }
@@ -349,7 +349,7 @@ pub extern "C" fn gpui_ios_show_keyboard(window_ptr: *mut c_void) {
         return;
     }
 
-    log::info!("GPUI iOS: Show keyboard requested");
+    log::info!("iZed iOS: Show keyboard requested");
 
     let window = unsafe { &*(window_ptr as *const super::window::IosWindow) };
     window.show_keyboard_with_type(crate::KeyboardType::Default);
@@ -365,7 +365,7 @@ pub extern "C" fn gpui_ios_hide_keyboard(window_ptr: *mut c_void) {
         return;
     }
 
-    log::info!("GPUI iOS: Hide keyboard requested");
+    log::info!("iZed iOS: Hide keyboard requested");
 
     let window = unsafe { &*(window_ptr as *const super::window::IosWindow) };
     window.hide_keyboard();
@@ -383,7 +383,7 @@ pub extern "C" fn gpui_ios_handle_text_input(window_ptr: *mut c_void, text_ptr: 
         return;
     }
 
-    log::info!("GPUI iOS: Handle text input");
+    log::info!("iZed iOS: Handle text input");
 
     let window = unsafe { &*(window_ptr as *const super::window::IosWindow) };
     window.handle_text_input(text_ptr as *mut objc2::runtime::AnyObject);
@@ -408,7 +408,7 @@ pub extern "C" fn gpui_ios_handle_key_event(
     }
 
     log::info!(
-        "GPUI iOS: Handle key event - code: {}, modifiers: {}, down: {}",
+        "iZed iOS: Handle key event - code: {}, modifiers: {}, down: {}",
         key_code,
         modifiers,
         is_key_down
@@ -440,7 +440,7 @@ pub extern "C" fn gpui_ios_handle_open_url(url_ptr: *mut c_void) {
             .into_owned()
     };
 
-    log::info!("GPUI iOS: Received deep link: {}", url_string);
+    log::info!("iZed iOS: Received deep link: {}", url_string);
 
     #[cfg(feature = "deeplink")]
     {
@@ -454,7 +454,7 @@ pub extern "C" fn gpui_ios_handle_open_url(url_ptr: *mut c_void) {
 ///
 /// # Safety
 /// On iOS all UI work happens on the main thread.  The FFI entry points
-/// (`set_app_callback`, `run_app`, `gpui_ios_run_demo`) are only ever
+/// (`set_app_callback`, `run_app`, `gpui_ios_run_app`) are only ever
 /// called from the main thread, so interior-mutable access is safe.
 #[allow(clippy::type_complexity)]
 struct AppCallbackCell(std::cell::UnsafeCell<Option<Box<dyn FnOnce(&mut App)>>>);
@@ -492,7 +492,7 @@ fn take_app_callback() -> Option<Box<dyn FnOnce(&mut App)>> {
 /// to register their root view.  If no callback is registered an empty
 /// window is opened as a fallback.
 #[unsafe(no_mangle)]
-pub extern "C" fn gpui_ios_run_demo() {
+pub extern "C" fn gpui_ios_run_app() {
     run_app();
 }
 
@@ -503,7 +503,7 @@ pub extern "C" fn gpui_ios_run_demo() {
 /// registered via [`set_app_callback`].  If no callback was registered a
 /// default empty window is opened so the app doesn't crash.
 pub fn run_app() {
-    log::info!("GPUI iOS: Starting application");
+    log::info!("iZed iOS: Starting application");
 
     // Initialise the FFI layer if not already done.
     if IOS_APP_STATE.get().is_none() {
@@ -521,10 +521,10 @@ pub fn run_app() {
     }
     application.run(|cx: &mut App| {
         if let Some(cb) = take_app_callback() {
-            log::info!("GPUI iOS: Invoking user-provided app callback");
+            log::info!("iZed iOS: Invoking user-provided app callback");
             cb(cx);
         } else {
-            log::warn!("GPUI iOS: No app callback registered — opening default empty window");
+            log::warn!("iZed iOS: No app callback registered — opening default empty window");
             cx.open_window(
                 WindowOptions {
                     window_bounds: None,
@@ -543,7 +543,7 @@ pub fn run_app() {
     if let Some(state) = IOS_APP_STATE.get() {
         let callback = unsafe { (*state.finish_launching.get()).take() };
         if let Some(callback) = callback {
-            log::info!("GPUI iOS: Invoking Application::run callback");
+            log::info!("iZed iOS: Invoking Application::run callback");
             callback();
         }
     }

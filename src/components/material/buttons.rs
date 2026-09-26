@@ -28,7 +28,7 @@ use gpui::{div, prelude::*, px, rgb};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let btn = material::button_filled("Accept", 0x6750a4, 0xffffff);
 /// ```
@@ -60,7 +60,7 @@ pub fn button_filled(label: &str, bg: u32, fg: u32) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let btn = material::button_tonal("Tonal", 0xe8def8, 0x1d192b);
 /// ```
@@ -91,7 +91,7 @@ pub fn button_tonal(label: &str, bg: u32, fg: u32) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let btn = material::button_outlined("Cancel", 0x79747e);
 /// ```
@@ -123,7 +123,7 @@ pub fn button_outlined(label: &str, outline: u32) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let btn = material::button_text("Learn More", 0x6750a4);
 /// ```
@@ -150,7 +150,7 @@ pub fn button_text(label: &str, color: u32) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let showcase = material::buttons(true); // dark mode
 /// ```

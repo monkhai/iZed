@@ -55,7 +55,7 @@ const TEAL: u32 = 0x94e2d5;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let card = shared::stat_card(
 ///     "Users", "1.2k", "↑ 12%",
@@ -134,7 +134,7 @@ pub fn stat_card(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let grid = shared::stat_cards(true); // dark mode
 /// ```

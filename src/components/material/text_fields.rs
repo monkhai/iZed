@@ -25,7 +25,7 @@ use gpui::{div, prelude::*, px, rgb};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let fields = material::text_fields(true); // dark mode
 /// ```

@@ -1790,7 +1790,7 @@ fn open_ssh_project(
                                 workspace.focus_panel::<project_panel::ProjectPanel>(window, cx);
                             }
                         })?;
-                        gpui_mobile::show_keyboard();
+                        ized_platform::show_keyboard();
                         Ok(())
                     }
                     .await;
@@ -1959,7 +1959,7 @@ pub fn open(cx: &mut App) {
     let user_store = cx.new(|cx| client::UserStore::new(client.clone(), cx));
     let workspace_store = cx.new(|cx| workspace::WorkspaceStore::new(client.clone(), cx));
     let session = cx.foreground_executor().block_on(session::Session::new(
-        "ized-workspace-spike".into(),
+        "ized-workspace".into(),
         db::kvp::KeyValueStore::global(cx),
     ));
     let session = cx.new(|cx| session::AppSession::new(session, cx));
@@ -2016,7 +2016,7 @@ pub fn open(cx: &mut App) {
             }) {
                 log::error!("Could not show Open Remote dialog: {error}");
             } else {
-                gpui_mobile::show_keyboard();
+                ized_platform::show_keyboard();
             }
         });
     });
@@ -2035,7 +2035,7 @@ pub fn open(cx: &mut App) {
                     });
                 });
             });
-            gpui_mobile::show_keyboard();
+            ized_platform::show_keyboard();
         });
     });
     editor::init(cx);
@@ -2190,7 +2190,7 @@ pub fn open(cx: &mut App) {
             }) {
                 log::error!("Could not show recent SSH projects: {error}");
             } else {
-                gpui_mobile::show_keyboard();
+                ized_platform::show_keyboard();
             }
         }
         Err(error) => log::error!("Could not open Zed workspace: {error}"),

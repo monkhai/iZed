@@ -1,4 +1,4 @@
-//! Packages demo screen — showcases all 12 gpui-mobile utility packages.
+//! Packages demo screen — showcases all 12 ized-platform utility packages.
 
 use std::cell::RefCell;
 
@@ -49,7 +49,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── Device Info (native API, no JNI) ────────────────────────────────────
     root = root.child(section_header("Device Info", sub_text)).child({
-        let info = gpui_mobile::packages::device_info::get_device_info();
+        let info = ized_platform::packages::device_info::get_device_info();
         match info {
             Ok(di) => info_card(card_bg)
                 .child(kv_row("Model", &di.model, GREEN, text_color, sub_text))
@@ -94,10 +94,10 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
     root = root
         .child(section_header("Path Provider", sub_text))
         .child({
-            let tmp = gpui_mobile::packages::path_provider::temporary_directory();
-            let docs = gpui_mobile::packages::path_provider::documents_directory();
-            let cache = gpui_mobile::packages::path_provider::cache_directory();
-            let support = gpui_mobile::packages::path_provider::support_directory();
+            let tmp = ized_platform::packages::path_provider::temporary_directory();
+            let docs = ized_platform::packages::path_provider::documents_directory();
+            let cache = ized_platform::packages::path_provider::cache_directory();
+            let support = ized_platform::packages::path_provider::support_directory();
 
             info_card(card_bg)
                 .child(kv_row(
@@ -135,7 +135,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── Package Info (JNI) ──────────────────────────────────────────────────
     root = root.child(section_header("Package Info", sub_text)).child({
-        let info = gpui_mobile::packages::package_info::get_package_info();
+        let info = ized_platform::packages::package_info::get_package_info();
         match info {
             Ok(pi) => info_card(card_bg)
                 .child(kv_row("App Name", &pi.app_name, BLUE, text_color, sub_text))
@@ -164,14 +164,14 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── Connectivity (JNI) ──────────────────────────────────────────────────
     root = root.child(section_header("Connectivity", sub_text)).child({
-        let status = gpui_mobile::packages::connectivity::check_connectivity();
+        let status = ized_platform::packages::connectivity::check_connectivity();
         let label = format!("{:?}", status);
         info_card(card_bg).child(kv_row("Status", &label, TEAL, text_color, sub_text))
     });
 
     // ── Network Info (JNI) ──────────────────────────────────────────────────
     root = root.child(section_header("Network Info", sub_text)).child({
-        let info = gpui_mobile::packages::network_info::get_network_info();
+        let info = ized_platform::packages::network_info::get_network_info();
         match info {
             Ok(ni) => info_card(card_bg)
                 .child(kv_row(
@@ -206,7 +206,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
     root = root
         .child(section_header("Shared Preferences", sub_text))
         .child({
-            let prefs = gpui_mobile::packages::shared_preferences::SharedPreferences::instance();
+            let prefs = ized_platform::packages::shared_preferences::SharedPreferences::instance();
             let key = "gpui_demo_counter";
             let current = prefs.get_int(key).unwrap_or(0);
             let _ = prefs.set_int(key, current + 1);
@@ -224,7 +224,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── Vibration (JNI) ─────────────────────────────────────────────────────
     root = root.child(section_header("Vibration", sub_text)).child({
-        let can = gpui_mobile::packages::vibration::can_vibrate();
+        let can = ized_platform::packages::vibration::can_vibrate();
         let mut card = info_card(card_bg).child(kv_row(
             "Can Vibrate",
             if can { "Yes" } else { "No" },
@@ -244,8 +244,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         "Light",
                         BLUE,
                         cx.listener(|_this, _, _, cx| {
-                            let _ = gpui_mobile::packages::vibration::haptic_feedback(
-                                gpui_mobile::packages::vibration::HapticFeedback::Light,
+                            let _ = ized_platform::packages::vibration::haptic_feedback(
+                                ized_platform::packages::vibration::HapticFeedback::Light,
                             );
                             cx.notify();
                         }),
@@ -254,8 +254,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         "Medium",
                         GREEN,
                         cx.listener(|_this, _, _, cx| {
-                            let _ = gpui_mobile::packages::vibration::haptic_feedback(
-                                gpui_mobile::packages::vibration::HapticFeedback::Medium,
+                            let _ = ized_platform::packages::vibration::haptic_feedback(
+                                ized_platform::packages::vibration::HapticFeedback::Medium,
                             );
                             cx.notify();
                         }),
@@ -264,8 +264,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         "Heavy",
                         MAUVE,
                         cx.listener(|_this, _, _, cx| {
-                            let _ = gpui_mobile::packages::vibration::haptic_feedback(
-                                gpui_mobile::packages::vibration::HapticFeedback::Heavy,
+                            let _ = ized_platform::packages::vibration::haptic_feedback(
+                                ized_platform::packages::vibration::HapticFeedback::Heavy,
                             );
                             cx.notify();
                         }),
@@ -274,8 +274,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         "Success",
                         TEAL,
                         cx.listener(|_this, _, _, cx| {
-                            let _ = gpui_mobile::packages::vibration::haptic_feedback(
-                                gpui_mobile::packages::vibration::HapticFeedback::Success,
+                            let _ = ized_platform::packages::vibration::haptic_feedback(
+                                ized_platform::packages::vibration::HapticFeedback::Success,
                             );
                             cx.notify();
                         }),
@@ -287,7 +287,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── URL Launcher (JNI) ──────────────────────────────────────────────────
     root = root.child(section_header("URL Launcher", sub_text)).child({
-        let can = gpui_mobile::packages::url_launcher::can_launch_url("https://zed.dev");
+        let can = ized_platform::packages::url_launcher::can_launch_url("https://zed.dev");
         info_card(card_bg)
             .child(kv_row(
                 "Can open https://zed.dev",
@@ -316,7 +316,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         .on_mouse_down(
                             gpui::MouseButton::Left,
                             cx.listener(|_this, _, _, cx| {
-                                let _ = gpui_mobile::packages::url_launcher::launch_url(
+                                let _ = ized_platform::packages::url_launcher::launch_url(
                                     "https://zed.dev",
                                 );
                                 cx.notify();
@@ -328,7 +328,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── Battery ───────────────────────────────────────────────────────────────
     root = root.child(section_header("Battery", sub_text)).child({
-        let bi = gpui_mobile::packages::battery::battery_info();
+        let bi = ized_platform::packages::battery::battery_info();
         info_card(card_bg)
             .child(kv_row(
                 "Level",
@@ -357,7 +357,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
 
     // ── Sensors ───────────────────────────────────────────────────────────────
     root = root.child(section_header("Sensors", sub_text)).child({
-        let avail = gpui_mobile::packages::sensors::available_sensors();
+        let avail = ized_platform::packages::sensors::available_sensors();
         let mut card = info_card(card_bg)
             .child(kv_row(
                 "Accelerometer",
@@ -400,7 +400,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
             ));
 
         // Show live accelerometer reading if available
-        if let Some(accel) = gpui_mobile::packages::sensors::accelerometer() {
+        if let Some(accel) = ized_platform::packages::sensors::accelerometer() {
             card = card.child(divider_line(divider_color)).child(kv_row(
                 "Accel (m/s²)",
                 &format!("x={:.1} y={:.1} z={:.1}", accel.x, accel.y, accel.z),
@@ -433,7 +433,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|_this, _, _, cx| {
-                            let _ = gpui_mobile::packages::share::share_text(
+                            let _ = ized_platform::packages::share::share_text(
                                 "Hello from GPUI!",
                                 Some("GPUI Demo"),
                             );
@@ -493,8 +493,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Pick File", BLUE, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        let opts = gpui_mobile::packages::file_selector::OpenFileOptions::default();
-                                        gpui_mobile::packages::file_selector::open_file(&opts)
+                                        let opts = ized_platform::packages::file_selector::OpenFileOptions::default();
+                                        ized_platform::packages::file_selector::open_file(&opts)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -514,8 +514,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Pick Files", GREEN, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        let opts = gpui_mobile::packages::file_selector::OpenFileOptions::default();
-                                        gpui_mobile::packages::file_selector::open_files(&opts)
+                                        let opts = ized_platform::packages::file_selector::OpenFileOptions::default();
+                                        ized_platform::packages::file_selector::open_files(&opts)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -534,7 +534,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Pick Dir", TEAL, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        gpui_mobile::packages::file_selector::get_directory_path(None)
+                                        ized_platform::packages::file_selector::get_directory_path(None)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -573,11 +573,11 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Gallery", MAUVE, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        let opts = gpui_mobile::packages::image_picker::ImagePickerOptions {
-                                            source: gpui_mobile::packages::image_picker::ImageSource::Gallery,
+                                        let opts = ized_platform::packages::image_picker::ImagePickerOptions {
+                                            source: ized_platform::packages::image_picker::ImageSource::Gallery,
                                             ..Default::default()
                                         };
-                                        gpui_mobile::packages::image_picker::pick_image(&opts)
+                                        ized_platform::packages::image_picker::pick_image(&opts)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -597,11 +597,11 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Camera", PEACH, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        let opts = gpui_mobile::packages::image_picker::ImagePickerOptions {
-                                            source: gpui_mobile::packages::image_picker::ImageSource::Camera,
+                                        let opts = ized_platform::packages::image_picker::ImagePickerOptions {
+                                            source: ized_platform::packages::image_picker::ImageSource::Camera,
                                             ..Default::default()
                                         };
-                                        gpui_mobile::packages::image_picker::pick_image(&opts)
+                                        ized_platform::packages::image_picker::pick_image(&opts)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -621,7 +621,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Multi", YELLOW, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        gpui_mobile::packages::image_picker::pick_multi_image(None, None, None)
+                                        ized_platform::packages::image_picker::pick_multi_image(None, None, None)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -640,9 +640,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Video", TEAL, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        gpui_mobile::packages::image_picker::pick_video(
-                                            gpui_mobile::packages::image_picker::ImageSource::Gallery,
-                                            gpui_mobile::packages::image_picker::CameraDevice::Rear,
+                                        ized_platform::packages::image_picker::pick_video(
+                                            ized_platform::packages::image_picker::ImageSource::Gallery,
+                                            ized_platform::packages::image_picker::CameraDevice::Rear,
                                         )
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
@@ -663,9 +663,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Record", super::RED, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        gpui_mobile::packages::image_picker::pick_video(
-                                            gpui_mobile::packages::image_picker::ImageSource::Camera,
-                                            gpui_mobile::packages::image_picker::CameraDevice::Rear,
+                                        ized_platform::packages::image_picker::pick_video(
+                                            ized_platform::packages::image_picker::ImageSource::Camera,
+                                            ized_platform::packages::image_picker::CameraDevice::Rear,
                                         )
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
@@ -699,7 +699,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
             });
 
             // List cameras
-            let cameras_label = match gpui_mobile::packages::camera::available_cameras() {
+            let cameras_label = match ized_platform::packages::camera::available_cameras() {
                 Ok(cams) => {
                     let names: Vec<String> = cams
                         .iter()
@@ -736,9 +736,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                                     let mut state = s.borrow_mut();
                                     if state.camera_handle.is_some() {
                                         // Toggle preview
-                                        let mut handle = gpui_mobile::packages::camera::CameraHandle::from_id(state.camera_handle.unwrap());
+                                        let mut handle = ized_platform::packages::camera::CameraHandle::from_id(state.camera_handle.unwrap());
                                         if state.camera_previewing {
-                                            match gpui_mobile::packages::camera::stop_preview(&mut handle) {
+                                            match ized_platform::packages::camera::stop_preview(&mut handle) {
                                                 Ok(()) => {
                                                     state.camera_previewing = false;
                                                     state.camera_status = Some("Preview stopped".into());
@@ -746,7 +746,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                                                 Err(e) => state.camera_status = Some(format!("Error: {e}")),
                                             }
                                         } else {
-                                            match gpui_mobile::packages::camera::start_preview(&mut handle) {
+                                            match ized_platform::packages::camera::start_preview(&mut handle) {
                                                 Ok(()) => {
                                                     state.camera_previewing = true;
                                                     state.camera_status = Some("Preview active".into());
@@ -757,15 +757,15 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                                         std::mem::forget(handle);
                                     } else {
                                         // Open back camera
-                                        match gpui_mobile::packages::camera::available_cameras() {
+                                        match ized_platform::packages::camera::available_cameras() {
                                             Ok(cams) => {
                                                 let cam = cams.iter()
-                                                    .find(|c| c.lens_direction == gpui_mobile::packages::camera::CameraLensDirection::Back)
+                                                    .find(|c| c.lens_direction == ized_platform::packages::camera::CameraLensDirection::Back)
                                                     .or(cams.first());
                                                 if let Some(cam) = cam {
-                                                    match gpui_mobile::packages::camera::create_camera(
+                                                    match ized_platform::packages::camera::create_camera(
                                                         cam,
-                                                        gpui_mobile::packages::camera::ResolutionPreset::High,
+                                                        ized_platform::packages::camera::ResolutionPreset::High,
                                                         true,
                                                     ) {
                                                         Ok(h) => {
@@ -792,20 +792,20 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             PACKAGES_STATE.with(|s| {
                                 let mut state = s.borrow_mut();
                                 if let Some(id) = state.camera_handle {
-                                    let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
-                                    match gpui_mobile::packages::camera::available_cameras() {
+                                    let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
+                                    match ized_platform::packages::camera::available_cameras() {
                                         Ok(cams) => {
                                             // Toggle between front and back
                                             let target_dir = if state.camera_status.as_deref()
                                                 .map(|s| s.contains("Front"))
                                                 .unwrap_or(false)
                                             {
-                                                gpui_mobile::packages::camera::CameraLensDirection::Back
+                                                ized_platform::packages::camera::CameraLensDirection::Back
                                             } else {
-                                                gpui_mobile::packages::camera::CameraLensDirection::Front
+                                                ized_platform::packages::camera::CameraLensDirection::Front
                                             };
                                             if let Some(cam) = cams.iter().find(|c| c.lens_direction == target_dir) {
-                                                match gpui_mobile::packages::camera::set_camera(&handle, cam) {
+                                                match ized_platform::packages::camera::set_camera(&handle, cam) {
                                                     Ok(()) => state.camera_status = Some(format!("Switched to {:?}", cam.lens_direction)),
                                                     Err(e) => state.camera_status = Some(format!("Error: {e}")),
                                                 }
@@ -824,8 +824,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             PACKAGES_STATE.with(|s| {
                                 let mut state = s.borrow_mut();
                                 if let Some(id) = state.camera_handle.take() {
-                                    let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
-                                    let _ = gpui_mobile::packages::camera::dispose(handle);
+                                    let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
+                                    let _ = ized_platform::packages::camera::dispose(handle);
                                     state.camera_previewing = false;
                                     state.camera_recording = false;
                                     state.camera_status = Some("Closed".into());
@@ -849,8 +849,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             PACKAGES_STATE.with(|s| {
                                 let mut state = s.borrow_mut();
                                 if let Some(id) = state.camera_handle {
-                                    let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
-                                    match gpui_mobile::packages::camera::take_picture(&handle) {
+                                    let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
+                                    match ized_platform::packages::camera::take_picture(&handle) {
                                         Ok(img) => {
                                             state.camera_status = Some(format!(
                                                 "Photo: {}x{}", img.width, img.height
@@ -872,9 +872,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                                 PACKAGES_STATE.with(|s| {
                                     let mut state = s.borrow_mut();
                                     if let Some(id) = state.camera_handle {
-                                        let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
+                                        let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
                                         if state.camera_recording {
-                                            match gpui_mobile::packages::camera::stop_video_recording(&handle) {
+                                            match ized_platform::packages::camera::stop_video_recording(&handle) {
                                                 Ok(vid) => {
                                                     state.camera_recording = false;
                                                     state.camera_status = Some(format!("Video: {}", vid.path));
@@ -882,7 +882,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                                                 Err(e) => state.camera_status = Some(format!("Error: {e}")),
                                             }
                                         } else {
-                                            match gpui_mobile::packages::camera::start_video_recording(&handle) {
+                                            match ized_platform::packages::camera::start_video_recording(&handle) {
                                                 Ok(()) => {
                                                     state.camera_recording = true;
                                                     state.camera_status = Some("Recording...".into());
@@ -911,9 +911,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
                             if let Some(id) = state.camera_handle {
-                                let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
-                                let _ = gpui_mobile::packages::camera::set_flash_mode(
-                                    &handle, gpui_mobile::packages::camera::FlashMode::Off,
+                                let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
+                                let _ = ized_platform::packages::camera::set_flash_mode(
+                                    &handle, ized_platform::packages::camera::FlashMode::Off,
                                 );
                                 state.camera_status = Some("Flash: Off".into());
                                 std::mem::forget(handle);
@@ -925,9 +925,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
                             if let Some(id) = state.camera_handle {
-                                let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
-                                let _ = gpui_mobile::packages::camera::set_flash_mode(
-                                    &handle, gpui_mobile::packages::camera::FlashMode::Auto,
+                                let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
+                                let _ = ized_platform::packages::camera::set_flash_mode(
+                                    &handle, ized_platform::packages::camera::FlashMode::Auto,
                                 );
                                 state.camera_status = Some("Flash: Auto".into());
                                 std::mem::forget(handle);
@@ -939,9 +939,9 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
                             if let Some(id) = state.camera_handle {
-                                let handle = gpui_mobile::packages::camera::CameraHandle::from_id(id);
-                                let _ = gpui_mobile::packages::camera::set_flash_mode(
-                                    &handle, gpui_mobile::packages::camera::FlashMode::Torch,
+                                let handle = ized_platform::packages::camera::CameraHandle::from_id(id);
+                                let _ = ized_platform::packages::camera::set_flash_mode(
+                                    &handle, ized_platform::packages::camera::FlashMode::Torch,
                                 );
                                 state.camera_status = Some("Flash: Torch".into());
                                 std::mem::forget(handle);
@@ -975,8 +975,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Camera", BLUE, cx.listener(|_this, _, _, cx| {
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
-                            match gpui_mobile::packages::permission_handler::check_permission(
-                                gpui_mobile::packages::permission_handler::Permission::Camera,
+                            match ized_platform::packages::permission_handler::check_permission(
+                                ized_platform::packages::permission_handler::Permission::Camera,
                             ) {
                                 Ok(st) => state.perm_status = Some(format!("Camera: {:?}", st)),
                                 Err(e) => state.perm_status = Some(format!("Error: {e}")),
@@ -987,8 +987,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Location", GREEN, cx.listener(|_this, _, _, cx| {
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
-                            match gpui_mobile::packages::permission_handler::check_permission(
-                                gpui_mobile::packages::permission_handler::Permission::LocationWhenInUse,
+                            match ized_platform::packages::permission_handler::check_permission(
+                                ized_platform::packages::permission_handler::Permission::LocationWhenInUse,
                             ) {
                                 Ok(st) => state.perm_status = Some(format!("Location: {:?}", st)),
                                 Err(e) => state.perm_status = Some(format!("Error: {e}")),
@@ -999,8 +999,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Photos", MAUVE, cx.listener(|_this, _, _, cx| {
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
-                            match gpui_mobile::packages::permission_handler::check_permission(
-                                gpui_mobile::packages::permission_handler::Permission::Photos,
+                            match ized_platform::packages::permission_handler::check_permission(
+                                ized_platform::packages::permission_handler::Permission::Photos,
                             ) {
                                 Ok(st) => state.perm_status = Some(format!("Photos: {:?}", st)),
                                 Err(e) => state.perm_status = Some(format!("Error: {e}")),
@@ -1011,8 +1011,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Notif", YELLOW, cx.listener(|_this, _, _, cx| {
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
-                            match gpui_mobile::packages::permission_handler::check_permission(
-                                gpui_mobile::packages::permission_handler::Permission::Notification,
+                            match ized_platform::packages::permission_handler::check_permission(
+                                ized_platform::packages::permission_handler::Permission::Notification,
                             ) {
                                 Ok(st) => state.perm_status = Some(format!("Notification: {:?}", st)),
                                 Err(e) => state.perm_status = Some(format!("Error: {e}")),
@@ -1033,8 +1033,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Request Cam", PEACH, cx.listener(|_this, _, _, cx| {
                         cx.spawn(async |this, cx| {
                             let result = cx.background_executor().spawn(async {
-                                gpui_mobile::packages::permission_handler::request_permission(
-                                    gpui_mobile::packages::permission_handler::Permission::Camera,
+                                ized_platform::packages::permission_handler::request_permission(
+                                    ized_platform::packages::permission_handler::Permission::Camera,
                                 )
                             }).await;
                             let _ = this.update(cx, |_this, cx| {
@@ -1052,8 +1052,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Request Mic", TEAL, cx.listener(|_this, _, _, cx| {
                         cx.spawn(async |this, cx| {
                             let result = cx.background_executor().spawn(async {
-                                gpui_mobile::packages::permission_handler::request_permission(
-                                    gpui_mobile::packages::permission_handler::Permission::Microphone,
+                                ized_platform::packages::permission_handler::request_permission(
+                                    ized_platform::packages::permission_handler::Permission::Microphone,
                                 )
                             }).await;
                             let _ = this.update(cx, |_this, cx| {
@@ -1071,7 +1071,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     .child(action_button("Settings", SURFACE0, cx.listener(|_this, _, _, cx| {
                         PACKAGES_STATE.with(|s| {
                             let mut state = s.borrow_mut();
-                            match gpui_mobile::packages::permission_handler::open_app_settings() {
+                            match ized_platform::packages::permission_handler::open_app_settings() {
                                 Ok(true) => state.perm_status = Some("Settings opened".into()),
                                 Ok(false) => state.perm_status = Some("Could not open settings".into()),
                                 Err(e) => state.perm_status = Some(format!("Error: {e}")),
@@ -1104,7 +1104,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Service?", GREEN, cx.listener(|_this, _, _, cx| {
                                 PACKAGES_STATE.with(|s| {
                                     let mut state = s.borrow_mut();
-                                    match gpui_mobile::packages::location::is_location_service_enabled() {
+                                    match ized_platform::packages::location::is_location_service_enabled() {
                                         Ok(enabled) => state.location_status = Some(format!("Location enabled: {enabled}")),
                                         Err(e) => state.location_status = Some(format!("Error: {e}")),
                                     }
@@ -1116,8 +1116,8 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Current", BLUE, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        let settings = gpui_mobile::packages::location::LocationSettings::default();
-                                        gpui_mobile::packages::location::get_current_position(&settings)
+                                        let settings = ized_platform::packages::location::LocationSettings::default();
+                                        ized_platform::packages::location::get_current_position(&settings)
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -1139,7 +1139,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Last Known", TEAL, cx.listener(|_this, _, _, cx| {
                                 cx.spawn(async |this, cx| {
                                     let result = cx.background_executor().spawn(async {
-                                        gpui_mobile::packages::location::get_last_known_position()
+                                        ized_platform::packages::location::get_last_known_position()
                                     }).await;
                                     let _ = this.update(cx, |_this, cx| {
                                         PACKAGES_STATE.with(|s| {
@@ -1181,7 +1181,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Init", PEACH, cx.listener(|_this, _, _, cx| {
                                 PACKAGES_STATE.with(|s| {
                                     let mut state = s.borrow_mut();
-                                    match gpui_mobile::packages::notifications::initialize() {
+                                    match ized_platform::packages::notifications::initialize() {
                                         Ok(()) => state.notif_status = Some("Initialized".into()),
                                         Err(e) => state.notif_status = Some(format!("Error: {e}")),
                                     }
@@ -1195,14 +1195,14 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                                     let mut state = s.borrow_mut();
                                     state.notif_counter += 1;
                                     let counter = state.notif_counter;
-                                    let notif = gpui_mobile::packages::notifications::Notification {
+                                    let notif = ized_platform::packages::notifications::Notification {
                                         id: counter,
                                         title: format!("Test #{}", counter),
                                         body: "Hello from GPUI!".into(),
-                                        channel: gpui_mobile::packages::notifications::NotificationChannel::default(),
+                                        channel: ized_platform::packages::notifications::NotificationChannel::default(),
                                         payload: None,
                                     };
-                                    match gpui_mobile::packages::notifications::show(&notif) {
+                                    match ized_platform::packages::notifications::show(&notif) {
                                         Ok(()) => state.notif_status = Some(format!("Shown #{}", counter)),
                                         Err(e) => state.notif_status = Some(format!("Error: {e}")),
                                     }
@@ -1214,7 +1214,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                             action_button("Cancel All", YELLOW, cx.listener(|_this, _, _, cx| {
                                 PACKAGES_STATE.with(|s| {
                                     let mut state = s.borrow_mut();
-                                    match gpui_mobile::packages::notifications::cancel_all() {
+                                    match ized_platform::packages::notifications::cancel_all() {
                                         Ok(()) => state.notif_status = Some("All cancelled".into()),
                                         Err(e) => state.notif_status = Some(format!("Error: {e}")),
                                     }
@@ -1249,7 +1249,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         cx.listener(|_this, _, _, cx| {
                             PACKAGES_STATE.with(|s| {
                                 let mut state = s.borrow_mut();
-                                match gpui_mobile::packages::audio::AudioPlayer::new() {
+                                match ized_platform::packages::audio::AudioPlayer::new() {
                                     Ok(p) => {
                                         state.audio_status = Some("Player created".into());
                                         std::mem::forget(p); // leak for demo simplicity
@@ -1297,7 +1297,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                         cx.listener(|_this, _, _, cx| {
                             PACKAGES_STATE.with(|s| {
                                 let mut state = s.borrow_mut();
-                                match gpui_mobile::packages::video_player::VideoPlayer::new() {
+                                match ized_platform::packages::video_player::VideoPlayer::new() {
                                     Ok(p) => {
                                         state.video_status = Some("Player created".into());
                                         std::mem::forget(p); // leak for demo simplicity

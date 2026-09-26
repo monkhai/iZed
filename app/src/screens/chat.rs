@@ -2,7 +2,7 @@
 //! and a working text input composer bar.
 
 use gpui::{div, prelude::*, px, rgb, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent};
-use gpui_mobile::KeyboardType;
+use ized_platform::KeyboardType;
 use std::cell::RefCell;
 
 use super::Router;
@@ -216,17 +216,17 @@ pub fn dismiss_chat() {
     CHAT_STATE.with(|s| {
         s.borrow_mut().focused = false;
     });
-    gpui_mobile::hide_keyboard();
-    gpui_mobile::set_text_input_callback(None);
+    ized_platform::hide_keyboard();
+    ized_platform::set_text_input_callback(None);
 }
 
 fn install_chat_keyboard_callback() {
-    gpui_mobile::set_text_input_callback(Some(Box::new(|text: &str| {
+    ized_platform::set_text_input_callback(Some(Box::new(|text: &str| {
         CHAT_STATE.with(|s| {
             s.borrow_mut().pending_text.push(text.to_string());
         });
     })));
-    gpui_mobile::TEXT_INPUT_DIRTY.store(true, std::sync::atomic::Ordering::Release);
+    ized_platform::TEXT_INPUT_DIRTY.store(true, std::sync::atomic::Ordering::Release);
 }
 
 fn drain_chat_pending_text() {
@@ -299,7 +299,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
         )
     });
 
-    let kb_height = gpui_mobile::keyboard_height();
+    let kb_height = ized_platform::keyboard_height();
     // Don't subtract safe_bottom — the chat screen has no bottom safe-area
     // spacer (it's not a tab-root), and the iOS keyboard height already
     // includes the safe area. Add a small margin so the composer doesn't
@@ -1116,7 +1116,7 @@ fn render_composer(
                     move |_event: &MouseDownEvent, _window, _cx| {
                         CHAT_STATE.with(|s| s.borrow_mut().field_tapped = true);
                         install_chat_keyboard_callback();
-                        gpui_mobile::show_keyboard_with_type(KeyboardType::Default);
+                        ized_platform::show_keyboard_with_type(KeyboardType::Default);
                     },
                 ),
         )
@@ -1184,12 +1184,12 @@ fn render_composer(
                         CHAT_STATE.with(|s| {
                             let mut st = s.borrow_mut();
                             if st.mic_recording {
-                                let _ = gpui_mobile::packages::microphone::stop_recording();
+                                let _ = ized_platform::packages::microphone::stop_recording();
                                 st.mic_recording = false;
                             } else {
                                 let config =
-                                    gpui_mobile::packages::microphone::RecordingConfig::default();
-                                match gpui_mobile::packages::microphone::start_recording(&config) {
+                                    ized_platform::packages::microphone::RecordingConfig::default();
+                                match ized_platform::packages::microphone::start_recording(&config) {
                                     Ok(_) => {
                                         st.mic_recording = true;
                                     }

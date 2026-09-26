@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::time::Duration;
 
 use gpui::{div, prelude::*, px, rgb};
-use gpui_mobile::packages::audio::{AudioPlayer, LoopMode, PlayerState};
-use gpui_mobile::packages::media_session;
+use ized_platform::packages::audio::{AudioPlayer, LoopMode, PlayerState};
+use ized_platform::packages::media_session;
 
 use super::{
     Router, BLUE, GREEN, LIGHT_CARD_BG, LIGHT_SUBTEXT, LIGHT_TEXT, MAUVE, RED, SUBTEXT, SURFACE0,

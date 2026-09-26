@@ -47,7 +47,7 @@ const YELLOW: u32 = 0xf9e2af;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let bar = shared::progress_row(
 ///     "Storage", 0.72, 0x89b4fa, 0x45475a, 0xcdd6f4, 0xa6adc8,
@@ -112,7 +112,7 @@ pub fn progress_row(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let card = shared::progress_bars(true); // dark mode
 /// ```

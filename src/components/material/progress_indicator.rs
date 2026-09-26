@@ -19,10 +19,10 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::progress_indicator::{
+//! use ized_platform::components::material::progress_indicator::{
 //!     LinearProgressIndicator, CircularProgressIndicator,
 //! };
-//! use gpui_mobile::components::material::MaterialTheme;
+//! use ized_platform::components::material::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!

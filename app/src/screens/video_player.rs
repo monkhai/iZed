@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::time::Duration;
 
 use gpui::{div, prelude::*, px, rgb};
-use gpui_mobile::packages::media_session;
-use gpui_mobile::packages::video_player::VideoPlayer;
+use ized_platform::packages::media_session;
+use ized_platform::packages::video_player::VideoPlayer;
 
 use super::{
     Router, BLUE, GREEN, LIGHT_CARD_BG, LIGHT_SUBTEXT, LIGHT_TEXT, MAUVE, RED, SUBTEXT, SURFACE0,

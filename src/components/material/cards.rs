@@ -29,7 +29,7 @@ use super::surface::surface;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let showcase = material::cards(true); // dark mode
 /// ```

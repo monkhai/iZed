@@ -14,7 +14,7 @@ use gpui::{div, hsla, prelude::*, px};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let control = glass::segmented_control(true); // dark mode
 /// ```

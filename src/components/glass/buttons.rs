@@ -26,7 +26,7 @@ const BLUE: u32 = 0x89b4fa;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let btn = glass::button_tinted("Primary", 0.6, 0.6, 0.5);
 /// ```
@@ -50,7 +50,7 @@ pub fn button_tinted(label: &str, hue: f32, sat: f32, light: f32) -> impl IntoEl
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let btn = glass::button_plain("Cancel", dark);
 /// ```

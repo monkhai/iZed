@@ -703,7 +703,7 @@ fn handle_touches(view: *mut AnyObject, touches: *mut AnyObject, event: *mut Any
         #[allow(deprecated)]
         let window_ptr: *mut std::ffi::c_void = *(*view).get_ivar(GPUI_WINDOW_IVAR);
         if window_ptr.is_null() {
-            log::warn!("GPUI iOS: Touch event but no window pointer set");
+            log::warn!("iZed iOS: Touch event but no window pointer set");
             return;
         }
 
@@ -1153,7 +1153,7 @@ impl IosWindow {
                 *(*self.text_input_view).get_mut_ivar::<*mut c_void>(GPUI_WINDOW_IVAR) = window_ptr;
             }
             log::info!(
-                "GPUI iOS: Set window pointer {:p} on view {:p} and text input {:p}",
+                "iZed iOS: Set window pointer {:p} on view {:p} and text input {:p}",
                 window_ptr,
                 self.view,
                 self.text_input_view
@@ -1193,12 +1193,12 @@ impl IosWindow {
                 }
                 let frame: ObjcCGRect = msg_send![frame_value, CGRectValue];
                 let height = frame.height as f32;
-                log::info!("GPUI iOS: Keyboard will show, height={}", height);
+                log::info!("iZed iOS: Keyboard will show, height={}", height);
                 crate::set_keyboard_height(height);
             });
 
             let hide_block = block2::RcBlock::new(move |_notification: *mut AnyObject| {
-                log::info!("GPUI iOS: Keyboard will hide");
+                log::info!("iZed iOS: Keyboard will hide");
                 crate::set_keyboard_height(0.0);
             });
 
@@ -1676,7 +1676,7 @@ impl IosWindow {
     /// GPUI's event dispatch while an entity lease is active (UIKit's keyboard
     /// presentation can synchronously trigger layout callbacks).
     pub fn show_keyboard_with_type(&self, keyboard_type: crate::KeyboardType) {
-        log::info!("GPUI iOS: Showing keyboard (type={:?})", keyboard_type);
+        log::info!("iZed iOS: Showing keyboard (type={:?})", keyboard_type);
         unsafe {
             use crate::KeyboardType;
             let kb_type: isize = match keyboard_type {
@@ -1688,20 +1688,20 @@ impl IosWindow {
                 KeyboardType::Decimal => 8,      // UIKeyboardTypeDecimalPad
             };
             log::info!(
-                "GPUI iOS: text_input_view={:p}, setKeyboardType: {}",
+                "iZed iOS: text_input_view={:p}, setKeyboardType: {}",
                 self.text_input_view,
                 kb_type
             );
             if self.text_input_view.is_null() {
-                log::error!("GPUI iOS: text_input_view is NULL!");
+                log::error!("iZed iOS: text_input_view is NULL!");
                 return;
             }
             let _: () = msg_send![self.text_input_view, setKeyboardType: kb_type];
-            log::info!("GPUI iOS: setAutocorrectionType");
+            log::info!("iZed iOS: setAutocorrectionType");
             let _: () = msg_send![self.text_input_view, setAutocorrectionType: 1_isize];
-            log::info!("GPUI iOS: setAutocapitalizationType");
+            log::info!("iZed iOS: setAutocapitalizationType");
             let _: () = msg_send![self.text_input_view, setAutocapitalizationType: 0_isize];
-            log::info!("GPUI iOS: scheduling becomeFirstResponder");
+            log::info!("iZed iOS: scheduling becomeFirstResponder");
 
             // Defer becomeFirstResponder to the next run-loop iteration.
             let _: () = msg_send![self.text_input_view,
@@ -1709,7 +1709,7 @@ impl IosWindow {
                 withObject: ptr::null::<AnyObject>(),
                 afterDelay: 0.0_f64
             ];
-            log::info!("GPUI iOS: show_keyboard_with_type done");
+            log::info!("iZed iOS: show_keyboard_with_type done");
         }
     }
 
@@ -1718,7 +1718,7 @@ impl IosWindow {
     /// Deferred to the next run-loop iteration (like `show_keyboard_with_type`)
     /// to avoid re-entering GPUI event dispatch.
     pub fn hide_keyboard(&self) {
-        log::info!("GPUI iOS: Hiding keyboard");
+        log::info!("iZed iOS: Hiding keyboard");
         unsafe {
             let _: () = msg_send![self.text_input_view,
                 performSelector: sel!(resignFirstResponder),
@@ -1750,7 +1750,7 @@ impl IosWindow {
     }
 
     fn handle_input_text(&self, text_str: &str, repeated: bool) {
-        log::info!("GPUI iOS: Text input: {:?}", text_str);
+        log::info!("iZed iOS: Text input: {:?}", text_str);
 
         // The global callback serves our TextInput components. Also route
         // keystrokes through GPUI so Vim and editor bindings can consume them.
@@ -1800,7 +1800,7 @@ impl IosWindow {
     /// global text input callback so the active TextInput component can
     /// remove the last character.
     pub fn handle_delete_backward(&self) {
-        log::info!("GPUI iOS: deleteBackward");
+        log::info!("iZed iOS: deleteBackward");
 
         // Try the global callback first (backspace = "\x08")
         crate::dispatch_text_input("\x08");
@@ -1843,7 +1843,7 @@ impl IosWindow {
         let modifiers = modifier_flags_to_modifiers(modifier_flags);
 
         log::info!(
-            "GPUI iOS: Key event - key: {:?}, modifiers: {:?}, down: {}",
+            "iZed iOS: Key event - key: {:?}, modifiers: {:?}, down: {}",
             key,
             modifiers,
             is_key_down
@@ -1885,7 +1885,7 @@ impl IosWindow {
     /// This is called by the FFI layer when the app transitions between
     /// foreground and background states.
     pub fn notify_active_status_change(&self, is_active: bool) {
-        log::info!("GPUI iOS: Window active status changed to: {}", is_active);
+        log::info!("iZed iOS: Window active status changed to: {}", is_active);
 
         if !is_active {
             self.held_hardware_keys.borrow_mut().clear();
@@ -1922,7 +1922,7 @@ impl IosWindow {
             }
 
             log::info!(
-                "GPUI iOS: Layout changed — {:?} @{:.1}x → {:?} @{:.1}x",
+                "iZed iOS: Layout changed — {:?} @{:.1}x → {:?} @{:.1}x",
                 old_bounds.size,
                 old_scale,
                 new_size,
@@ -2211,7 +2211,7 @@ impl PlatformWindow for IosWindow {
         if let Some(renderer) = guard.as_mut() {
             renderer.draw(scene);
         } else {
-            log::trace!("GPUI iOS: draw called but no renderer available");
+            log::trace!("iZed iOS: draw called but no renderer available");
         }
     }
 

@@ -46,7 +46,7 @@ const MAUVE: u32 = 0xcba6f7;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let slider = glass::slider_row(
 ///     "Volume", "🔊", 0.45, 0xa6e3a1,
@@ -140,7 +140,7 @@ pub fn slider_row(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let panel = glass::sliders(true); // dark mode
 /// ```

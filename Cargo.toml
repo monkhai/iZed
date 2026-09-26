@@ -1,10 +1,10 @@
 [package]
-name = "gpui-mobile"
+name = "ized-platform"
 version = "0.1.0"
 edition = "2021"
-authors = ["Balamurali Pandranki <balamurali@live.com>"]
+authors = ["Yohai Wiener <yohaiwiener@gmail.com>"]
 license = "GPL-3.0-or-later OR AGPL-3.0-or-later OR Apache-2.0"
-description = "Mobile platform support for GPUI — iOS (wpgu/Metal) and Android (wgpu/Vulkan)"
+description = "iZed's GPUI platform integration for iPad"
 repository = "https://github.com/monkhai/iZed"
 homepage = "https://github.com/monkhai/iZed"
 keywords = ["gui", "mobile", "ios", "android", "gpui"]

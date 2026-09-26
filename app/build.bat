@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: ──────────────────────────────────────────────────────────────────────────────
-:: build.bat — Build & run the GPUI example app on Android
+:: build.bat — Build & run the iZed platform demo on Android
 :: ──────────────────────────────────────────────────────────────────────────────
 
 :: -- Resolve paths ------------------------------------------------------------
@@ -173,7 +173,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo [INFO] Launching app...
 :: Use direct command, no complex line continuation
-adb shell am start -n "dev.gpui.mobile.app/android.app.NativeActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
+adb shell am start -n "com.monkhai.ized/android.app.NativeActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
 
 echo [INFO] App launched on Android!
 echo [INFO] View logs with: adb logcat -s ized-app:D

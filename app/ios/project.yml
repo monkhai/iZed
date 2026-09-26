@@ -1,6 +1,6 @@
 name: iZed
 options:
-  bundleIdPrefix: dev.gpui
+  bundleIdPrefix: com.monkhai
   deploymentTarget:
     iOS: "16.0"
   xcodeVersion: "16.0"
@@ -17,7 +17,7 @@ targets:
       - target: iZed
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.gpui.mobile.example.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.monkhai.ized.uitests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGNING_ALLOWED: NO
   iZed:
@@ -41,7 +41,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.gpui.mobile.example
+        PRODUCT_BUNDLE_IDENTIFIER: com.monkhai.ized
         PRODUCT_NAME: iZed
         "IZED_STATIC_LIB[sdk=iphonesimulator*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios-sim/debug/libized_app.a"
         "IZED_STATIC_LIB[sdk=iphoneos*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios/debug/libized_app.a"
@@ -136,7 +136,7 @@ targets:
             CARGO_FLAGS=""
           fi
 
-          echo "Building gpui-mobile for ${RUST_TARGET} (${CONFIGURATION})..."
+          echo "Building ized-platform for ${RUST_TARGET} (${CONFIGURATION})..."
 
           # Ensure the Rust target is installed
           rustup target add "${RUST_TARGET}" 2>/dev/null || true

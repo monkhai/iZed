@@ -92,7 +92,7 @@ impl std::fmt::Display for TargetPlatform {
 /// # Examples
 ///
 /// ```rust
-/// use gpui_mobile::target_platform;
+/// use ized_platform::target_platform;
 ///
 /// let platform = target_platform();
 /// if platform.is_mobile() {
@@ -135,7 +135,7 @@ pub fn target_platform() -> TargetPlatform {
     )))]
     {
         panic!(
-            "gpui_mobile::target_platform() does not support this target. \
+            "ized_platform::target_platform() does not support this target. \
              Add a new TargetPlatform variant for your platform."
         )
     }

@@ -1616,8 +1616,8 @@ mod tests {
         p.on_open_urls(move |urls| {
             r2.lock().extend(urls);
         });
-        p.deliver_open_urls(vec!["gpui://test".to_string()]);
-        assert_eq!(received.lock().as_slice(), &["gpui://test"]);
+        p.deliver_open_urls(vec!["ized://test".to_string()]);
+        assert_eq!(received.lock().as_slice(), &["ized://test"]);
     }
 
     // ── reopen callback ───────────────────────────────────────────────────────

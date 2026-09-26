@@ -23,7 +23,7 @@ use gpui::{div, hsla, prelude::*, px};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let bar = glass::tab_bar(true); // dark mode
 /// ```

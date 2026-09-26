@@ -1,4 +1,4 @@
-package dev.gpui.mobile;
+package com.monkhai.ized.platform;
 
 import android.app.Activity;
 import android.app.Notification;

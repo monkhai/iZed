@@ -1,4 +1,4 @@
-// Root build.gradle.kts for the GPUI Mobile Android Example project.
+// Root build.gradle.kts for the iZed Platform Demo project.
 //
 // This is a minimal Gradle project that packages the Rust native library
 // (compiled separately via cargo-ndk) into an APK using NativeActivity.

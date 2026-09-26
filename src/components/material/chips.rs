@@ -32,7 +32,7 @@ use gpui::{div, prelude::*, px, rgb};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let active = material::chip("✓ Nearby", true, outline, on_surface, selected_bg);
 /// let inactive = material::chip("Open Now", false, outline, on_surface, selected_bg);
@@ -70,7 +70,7 @@ pub fn chip(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let showcase = material::chips(true); // dark mode
 /// ```

@@ -37,7 +37,7 @@ const BLUE: u32 = 0x89b4fa;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let banner = glass::notification(
 ///     "📱", "Messages", "Hey!", "now",
@@ -116,7 +116,7 @@ pub fn notification(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::glass;
+/// use ized_platform::components::glass;
 ///
 /// let banners = glass::notification_banners(true); // dark mode
 /// ```

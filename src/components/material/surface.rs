@@ -28,7 +28,7 @@ use gpui::{div, hsla, prelude::*, px, rgb};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let card = material::surface(true, 2) // dark mode, elevation 2
 ///     .child(content)

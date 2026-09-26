@@ -50,7 +50,7 @@ const SURFACE1: u32 = 0x45475a;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let a = shared::avatar("AB", 0x89b4fa, 0x181825, px(40.0));
 /// ```
@@ -89,7 +89,7 @@ pub fn avatar(initials: &str, bg: u32, fg: u32, size: Pixels) -> impl IntoElemen
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let online = shared::avatar_status("JD", 0x89b4fa, 0xa6e3a1, "Online", 0xa6adc8);
 /// ```
@@ -145,7 +145,7 @@ pub fn avatar_status(
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let showcase = shared::avatars(true); // dark mode
 /// ```

@@ -1,4 +1,4 @@
-package dev.gpui.mobile;
+package com.monkhai.ized.platform;
 
 import android.app.NativeActivity;
 import android.content.Intent;
@@ -135,7 +135,7 @@ public class GpuiActivity extends NativeActivity {
      * Handle new intents delivered to this singleTask activity.
      *
      * When the app is already running and a deeplink is opened
-     * (e.g. `adb shell am start -d gpui://video_player`), this method
+     * (e.g. `adb shell am start -d ized://video_player`), this method
      * receives the new intent. We update the activity's intent and
      * notify the Rust side via JNI.
      */

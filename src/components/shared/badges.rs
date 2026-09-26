@@ -45,7 +45,7 @@ const MANTLE: u32 = 0x181825;
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let badge = shared::badge_solid("New", 0x89b4fa, 0x181825);
 /// ```
@@ -75,7 +75,7 @@ pub fn badge_solid(label: &str, bg: u32, fg: u32) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let badge = shared::badge_outline("Draft", 0x89b4fa);
 /// ```
@@ -109,7 +109,7 @@ pub fn badge_outline(label: &str, color: u32) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let bell = shared::icon_with_badge("🔔", 0xf38ba8, true);
 /// ```
@@ -155,7 +155,7 @@ pub fn icon_with_badge(icon: &str, dot_color: u32, dark: bool) -> impl IntoEleme
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::shared;
+/// use ized_platform::components::shared;
 ///
 /// let showcase = shared::badges(true); // dark mode
 /// ```

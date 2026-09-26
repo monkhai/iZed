@@ -49,7 +49,7 @@ pub fn render(router: &Router, cx: &mut gpui::Context<Router>) -> impl IntoEleme
                     div()
                         .text_sm()
                         .text_color(rgb(sub_text))
-                        .child("Welcome to the GPUI mobile demo"),
+                        .child("Welcome to the iZed platform demo"),
                 ),
         )
         // ── Colour swatches ──────────────────────────────────────────────

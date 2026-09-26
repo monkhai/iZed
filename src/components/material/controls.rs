@@ -16,8 +16,8 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::controls::*;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::controls::*;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -1324,7 +1324,7 @@ impl IntoElement for RadioGroup {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::controls;
+/// use ized_platform::components::material::controls;
 ///
 /// let demo = controls::controls_demo(true); // dark mode
 /// ```

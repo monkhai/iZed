@@ -87,8 +87,8 @@ void* gpui_ios_get_window(void);
 
 /// Register the iZed app's root view with the GPUI platform.
 ///
-/// This must be called BEFORE gpui_ios_run_demo() so that the GPUI run loop
-/// knows which view to create. Defined by the iZed app crate (not gpui-mobile).
+/// This must be called BEFORE gpui_ios_run_app() so that the GPUI run loop
+/// knows which view to create. Defined by the iZed app crate (not ized-platform).
 void gpui_ios_register_app(void);
 
 /// Run the GPUI iOS application.
@@ -100,7 +100,7 @@ void gpui_ios_register_app(void);
 ///
 /// Call this from application:didFinishLaunchingWithOptions: after
 /// gpui_ios_register_app().
-void gpui_ios_run_demo(void);
+void gpui_ios_run_app(void);
 
 /// Show the software keyboard.
 ///

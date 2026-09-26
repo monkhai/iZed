@@ -21,8 +21,8 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::tab_bar::*;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::tab_bar::*;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -595,7 +595,7 @@ impl IntoElement for TabBar {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::tab_bar;
+/// use ized_platform::components::material::tab_bar;
 ///
 /// let demo = tab_bar::tab_bar_demo(true); // dark mode
 /// ```

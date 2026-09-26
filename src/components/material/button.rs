@@ -16,8 +16,8 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::button::*;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::button::*;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -1043,7 +1043,7 @@ pub fn buttons(dark: bool) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::button;
+/// use ized_platform::components::material::button;
 ///
 /// let demo = button::button_demo(true); // dark mode
 /// ```

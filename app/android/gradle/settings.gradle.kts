@@ -1,4 +1,4 @@
-// Settings for the GPUI Mobile Android Example project.
+// Settings for the iZed Platform Demo project.
 //
 // This is a minimal single-module Gradle project that packages the Rust
 // native library (compiled via cargo-ndk) into an APK using NativeActivity.
@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "GPUIMobileExample"
+rootProject.name = "iZedPlatformDemo"
 include(":app")

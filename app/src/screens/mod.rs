@@ -1,4 +1,4 @@
-//! Navigation router for the cross-platform GPUI example app.
+//! Navigation router for the iZed platform demo.
 //!
 //! This module defines the available screens, a shared navigation model,
 //! and a top-level `Router` view that renders the currently active screen.
@@ -31,8 +31,8 @@ use gpui::{
     div, point, prelude::*, px, rgb, size, Bounds, Context, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, SharedString, Window,
 };
-use gpui_mobile::components::material::{MaterialTheme, NavigationBarBuilder, TopAppBar};
-use gpui_mobile::{set_system_chrome, StatusBarContentStyle, SystemChromeStyle};
+use ized_platform::components::material::{MaterialTheme, NavigationBarBuilder, TopAppBar};
+use ized_platform::{set_system_chrome, StatusBarContentStyle, SystemChromeStyle};
 
 // ── Screen enum ──────────────────────────────────────────────────────────────
 
@@ -61,16 +61,16 @@ pub enum Screen {
 impl Screen {
     /// Parse a screen from a deeplink URL path segment.
     ///
-    /// Accepts URLs like `gpui://video_player`, `gpui://counter`,
-    /// `gpui://settings`, etc. The host or first path segment is
+    /// Accepts URLs like `ized://video_player`, `ized://counter`,
+    /// `ized://settings`, etc. The host or first path segment is
     /// matched case-insensitively.
     ///
     /// Returns `None` for unrecognized paths or empty URLs.
     pub fn from_deeplink_url(url: &str) -> Option<Self> {
-        // Parse: "gpui://video_player" → host = "video_player"
-        //        "gpui://video_player/foo" → host = "video_player"
+        // Parse: "ized://video_player" → host = "video_player"
+        //        "ized://video_player/foo" → host = "video_player"
         let stripped = url
-            .strip_prefix("gpui://")
+            .strip_prefix("ized://")
             .or_else(|| url.strip_prefix("gpui:"))?;
         let path = stripped.split('/').next().unwrap_or("").trim();
         if path.is_empty() {
@@ -241,7 +241,7 @@ impl Router {
     fn query_safe_area() -> SafeArea {
         #[cfg(target_os = "android")]
         {
-            use gpui_mobile::android::jni;
+            use ized_platform::android::jni;
             if let Some(platform) = jni::platform() {
                 if let Some(win) = platform.primary_window() {
                     let insets = win.safe_area_insets_logical();
@@ -261,7 +261,7 @@ impl Router {
 
         #[cfg(target_os = "ios")]
         {
-            let (top, bottom, left, right) = gpui_mobile::safe_area_insets();
+            let (top, bottom, left, right) = ized_platform::safe_area_insets();
             if top > 0.0 || bottom > 0.0 {
                 return SafeArea {
                     top,
@@ -365,7 +365,7 @@ impl Render for Router {
         log::info!("Router: render() screen={:?}", self.current_screen);
         let show_tab_bar = self.current_screen.is_tab_root();
         let theme =
-            gpui_mobile::components::material::MaterialTheme::from_appearance(self.dark_mode);
+            ized_platform::components::material::MaterialTheme::from_appearance(self.dark_mode);
         let bg_color = theme.surface;
         let text_color = theme.on_surface;
         let safe_top = self.safe_area.top;
@@ -412,7 +412,7 @@ impl Router {
         let is_fullscreen_demo =
             matches!(self.current_screen, Screen::Animations | Screen::Shaders);
         let theme =
-            gpui_mobile::components::material::MaterialTheme::from_appearance(self.dark_mode);
+            ized_platform::components::material::MaterialTheme::from_appearance(self.dark_mode);
 
         if is_fullscreen_demo {
             SystemChromeStyle {

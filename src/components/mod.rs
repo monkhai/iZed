@@ -1,4 +1,4 @@
-//! # GPUI Mobile Components
+//! # iZed Platform Components
 //!
 //! A library of ready-to-use UI components built with raw GPUI primitives,
 //! organised into three design-language modules:
@@ -13,9 +13,9 @@
 //! ## Quick start
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::glass;
-//! use gpui_mobile::components::material;
-//! use gpui_mobile::components::shared;
+//! use ized_platform::components::glass;
+//! use ized_platform::components::material;
+//! use ized_platform::components::shared;
 //!
 //! // Use individual components
 //! let panel = glass::panel(dark);

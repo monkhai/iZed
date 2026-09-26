@@ -17,7 +17,7 @@ use gpui::{div, hsla, linear_color_stop, linear_gradient, prelude::*, px};
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material;
+/// use ized_platform::components::material;
 ///
 /// let card = material::hero_card(true); // dark mode
 /// ```

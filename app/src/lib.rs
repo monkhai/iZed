@@ -4,8 +4,8 @@
 //! Android demo remains available as a platform example through [`screens`].
 //! Build instructions for a physical iPad are in the repository README.
 
-// Link gpui-mobile so its symbols (jni helpers, platform, etc.) are available.
-extern crate gpui_mobile;
+// Link ized-platform so its symbols (jni helpers, platform, etc.) are available.
+extern crate ized_platform;
 
 pub mod demos;
 pub mod screens;
@@ -27,7 +27,7 @@ use screens::Router;
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[cfg(target_os = "android")]
-use gpui_mobile::android::jni;
+use ized_platform::android::jni;
 
 /// Called by the `android-activity` crate on a dedicated native thread.
 /// Does NOT return until the app is ready to exit.
@@ -89,11 +89,11 @@ fn android_main(app: android_activity::AndroidApp) {
 
 /// Register the iZed root view with the GPUI iOS platform.
 ///
-/// This is called from `main.m` **before** `gpui_ios_run_demo()` so that
+/// This is called from `main.m` **before** `gpui_ios_run_app()` so that
 /// when the GPUI run loop starts it knows which view to create.
 ///
 /// The symbol lives in the iZed app's static library, which is force-loaded
-/// alongside `libgpui_mobile.a` by the Xcode linker.
+/// alongside `libized_platform.a` by the Xcode linker.
 /// Minimal logger that routes Rust `log` crate messages through NSLog.
 #[cfg(target_os = "ios")]
 struct NsLogLogger;
@@ -140,7 +140,7 @@ fn nslog(msg: &str) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_register_app() {
     #[cfg(feature = "ized")]
-    gpui_mobile::ios::ffi::set_asset_source(assets::Assets);
+    ized_platform::ios::ffi::set_asset_source(assets::Assets);
 
     // Set up Rust logging → NSLog so log::info! etc. appear in devicectl --console.
     let _ = log::set_logger(&NsLogLogger).map(|()| log::set_max_level(log::LevelFilter::Info));
@@ -151,7 +151,7 @@ pub extern "C" fn gpui_ios_register_app() {
         nslog(&msg);
     }));
 
-    gpui_mobile::ios::ffi::set_app_callback(Box::new(|cx: &mut App| {
+    ized_platform::ios::ffi::set_app_callback(Box::new(|cx: &mut App| {
         #[cfg(feature = "ized")]
         ized::open(cx);
         #[cfg(not(feature = "ized"))]
@@ -163,7 +163,7 @@ pub extern "C" fn gpui_ios_register_app() {
 #[cfg(target_os = "ios")]
 pub fn ios_main() {
     gpui_ios_register_app();
-    gpui_mobile::ios::ffi::run_app();
+    ized_platform::ios::ffi::run_app();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -175,7 +175,7 @@ pub fn ios_main() {
 /// This is called from both the Android and iOS entry points.  On both
 /// platforms, windows are fullscreen so `window_bounds` is `None`.
 ///
-/// If the app was launched via a deeplink (e.g. `gpui://video_player`),
+/// If the app was launched via a deeplink (e.g. `ized://video_player`),
 /// the router starts on the corresponding screen.
 #[cfg(any(target_os = "ios", target_os = "android"))]
 fn open_main_window(cx: &mut App) {
@@ -195,7 +195,7 @@ fn open_main_window(cx: &mut App) {
     log::info!("HTTP client configured successfully");
 
     // Check if the app was launched via a deeplink and determine the initial screen.
-    let initial_screen = match gpui_mobile::packages::deeplink::get_initial_link() {
+    let initial_screen = match ized_platform::packages::deeplink::get_initial_link() {
         Ok(Some(url)) => {
             log::info!("Deeplink: launched with URL: {url}");
             screens::Screen::from_deeplink_url(&url).unwrap_or_default()

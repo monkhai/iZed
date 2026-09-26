@@ -25,7 +25,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use gpui_mobile::platform_view::{PlatformViewRegistry, PlatformViewParams};
+//! use ized_platform::platform_view::{PlatformViewRegistry, PlatformViewParams};
 //!
 //! // Register a factory (typically in package init)
 //! PlatformViewRegistry::global().register("video_player", Box::new(MyVideoFactory));

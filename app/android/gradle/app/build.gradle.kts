@@ -1,4 +1,4 @@
-// App module build.gradle.kts for the GPUI Mobile Android Example.
+// App module build.gradle.kts for the iZed Platform Demo.
 //
 // This module packages the pre-compiled Rust native library into an APK
 // that uses Android's NativeActivity to host the GPUI application.
@@ -18,11 +18,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.gpui.mobile.example"
+    namespace = "com.monkhai.ized"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "dev.gpui.mobile.example"
+        applicationId = "com.monkhai.ized"
         minSdk = 26          // Vulkan 1.0 is mandatory from API 26+
         targetSdk = 34
         versionCode = 1

@@ -18,8 +18,8 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use gpui_mobile::components::material::card::*;
-//! use gpui_mobile::components::material::theme::MaterialTheme;
+//! use ized_platform::components::material::card::*;
+//! use ized_platform::components::material::theme::MaterialTheme;
 //!
 //! let theme = MaterialTheme::dark();
 //!
@@ -393,8 +393,8 @@ enum CardActionStyle {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::card::*;
-/// use gpui_mobile::components::material::theme::MaterialTheme;
+/// use ized_platform::components::material::card::*;
+/// use ized_platform::components::material::theme::MaterialTheme;
 ///
 /// let theme = MaterialTheme::dark();
 ///
@@ -951,7 +951,7 @@ pub fn cards(dark: bool) -> impl IntoElement {
 /// # Example
 ///
 /// ```rust,ignore
-/// use gpui_mobile::components::material::card;
+/// use ized_platform::components::material::card;
 ///
 /// let demo = card::card_demo(true); // dark mode
 /// ```

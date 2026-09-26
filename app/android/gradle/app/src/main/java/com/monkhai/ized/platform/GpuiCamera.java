@@ -1,4 +1,4 @@
-package dev.gpui.mobile;
+package com.monkhai.ized.platform;
 
 import android.Manifest;
 import android.app.Activity;
