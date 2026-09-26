@@ -35,9 +35,28 @@ use std::{
     ptr::{self, NonNull},
     rc::Rc,
     sync::Arc,
+    time::{Duration, Instant},
 };
 
 const GPUI_WINDOW_IVAR: &str = "gpui_window_ptr";
+const KEY_REPEAT_DELAY: Duration = Duration::from_millis(500);
+const KEY_REPEAT_INTERVAL: Duration = Duration::from_millis(60);
+
+#[derive(Clone)]
+enum HardwareKeyAction {
+    Text(String),
+    Delete,
+    Key {
+        code: u32,
+        flags: u32,
+        characters: Option<String>,
+    },
+}
+
+struct HeldHardwareKey {
+    action: HardwareKeyAction,
+    next_repeat: Instant,
+}
 
 /// Lightweight window handle for wgpu surface creation.
 /// Stores the raw UIView pointer needed by wgpu to create a Metal surface.
@@ -399,9 +418,8 @@ fn register_text_input_view_class() -> &'static AnyClass {
             Bool::YES
         }
 
-        // UIKit sends physical keyboard keys as UIPress events. Printable keys
-        // continue through UIKeyInput.insertText; forward navigation and
-        // modified keys directly to GPUI without inserting them twice.
+        // Handle physical keys here so they can repeat consistently while held.
+        // The software keyboard still uses UIKeyInput.insertText.
         unsafe extern "C" fn presses_began(
             this: *mut AnyObject,
             _sel: Sel,
@@ -423,6 +441,18 @@ fn register_text_input_view_class() -> &'static AnyClass {
             if !handle_hardware_presses(this, presses, false) {
                 let _: () =
                     msg_send![super(this, class!(UIView)), pressesEnded: presses, withEvent: event];
+            }
+        }
+
+        unsafe extern "C" fn presses_cancelled(
+            this: *mut AnyObject,
+            _sel: Sel,
+            presses: *mut AnyObject,
+            event: *mut AnyObject,
+        ) {
+            if !handle_hardware_presses(this, presses, false) {
+                let _: () =
+                    msg_send![super(this, class!(UIView)), pressesCancelled: presses, withEvent: event];
             }
         }
 
@@ -483,6 +513,11 @@ fn register_text_input_view_class() -> &'static AnyClass {
                 presses_ended
                     as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject),
             );
+            decl.add_method(
+                sel!(pressesCancelled:withEvent:),
+                presses_cancelled
+                    as unsafe extern "C" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject),
+            );
 
             // UITextInputTraits property methods
             decl.add_method(
@@ -539,6 +574,9 @@ unsafe fn handle_hardware_presses(
         }
         let code: isize = msg_send![key, keyCode];
         let flags: usize = msg_send![key, modifierFlags];
+        if !down {
+            window.held_hardware_keys.borrow_mut().remove(&(code as u32));
+        }
         let characters: *mut AnyObject = msg_send![key, characters];
         let characters = if characters.is_null() {
             None
@@ -552,13 +590,42 @@ unsafe fn handle_hardware_presses(
         };
         let modified = flags & ((1 << 18) | (1 << 19) | (1 << 20)) != 0;
         let navigation = matches!(code, 0x29 | 0x49..=0x4B | 0x4D..=0x52);
-        if modified || navigation {
-            window.handle_key_event_with_char(
-                code as u32,
-                flags as u32,
-                down,
-                characters.as_deref(),
-            );
+        let action = if modified || navigation {
+            Some(HardwareKeyAction::Key {
+                code: code as u32,
+                flags: flags as u32,
+                characters,
+            })
+        } else if code == 0x2A {
+            Some(HardwareKeyAction::Delete)
+        } else {
+            characters
+                // Keep composed and non-ASCII input on UIKit's text path.
+                .filter(|text| text.is_ascii() && text.chars().count() == 1)
+                .map(HardwareKeyAction::Text)
+        };
+        if let Some(action) = action {
+            if down {
+                if code < 0xE0 && flags & (1 << 20) == 0 {
+                    window.held_hardware_keys.borrow_mut().insert(
+                        code as u32,
+                        HeldHardwareKey {
+                            action: action.clone(),
+                            next_repeat: Instant::now() + KEY_REPEAT_DELAY,
+                        },
+                    );
+                }
+                window.dispatch_hardware_key(&action, false);
+            } else {
+                if let HardwareKeyAction::Key {
+                    code,
+                    flags,
+                    characters,
+                } = action
+                {
+                    window.handle_key_event_with_char(code, flags, false, characters.as_deref());
+                }
+            }
             handled = true;
         }
     }
@@ -709,6 +776,7 @@ pub(crate) struct IosWindow {
     scale_factor: Cell<f32>,
     /// Input handler for text input
     input_handler: RefCell<Option<PlatformInputHandler>>,
+    held_hardware_keys: RefCell<HashMap<u32, HeldHardwareKey>>,
     /// Callback for frame requests
     /// Note: pub(super) to allow ffi.rs to access this for the display link callback
     pub(super) request_frame_callback: RefCell<Option<Box<dyn FnMut(RequestFrameOptions)>>>,
@@ -884,6 +952,7 @@ impl IosWindow {
                 bounds: Cell::new(screen_bounds),
                 scale_factor: Cell::new(scale_factor),
                 input_handler: RefCell::new(None),
+                held_hardware_keys: RefCell::new(HashMap::new()),
                 request_frame_callback: RefCell::new(None),
                 input_callback: RefCell::new(None),
                 active_status_callback: RefCell::new(None),
@@ -1480,6 +1549,42 @@ impl IosWindow {
         }
     }
 
+    /// Repeat keys held on a physical keyboard. UIKit does not reliably send
+    /// repeated UIPress events to our custom text input view.
+    pub(crate) fn pump_key_repeats(&self) {
+        let now = Instant::now();
+        let due = {
+            let mut held = self.held_hardware_keys.borrow_mut();
+            held.values_mut()
+                .filter_map(|key| {
+                    if now >= key.next_repeat {
+                        key.next_repeat = now + KEY_REPEAT_INTERVAL;
+                        Some(key.action.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        for action in due {
+            self.dispatch_hardware_key(&action, true);
+        }
+    }
+
+    fn dispatch_hardware_key(&self, action: &HardwareKeyAction, repeated: bool) {
+        match action {
+            HardwareKeyAction::Text(text) => self.handle_input_text(text, repeated),
+            HardwareKeyAction::Delete => self.handle_delete_backward(),
+            HardwareKeyAction::Key {
+                code,
+                flags,
+                characters,
+            } => {
+                self.handle_key_event_with_char(*code, *flags, true, characters.as_deref());
+            }
+        }
+    }
+
     /// Show the software keyboard with the specified keyboard type.
     ///
     /// The actual `becomeFirstResponder` call is deferred to the next run-loop
@@ -1556,50 +1661,49 @@ impl IosWindow {
                 .to_string_lossy()
                 .into_owned();
 
-            log::info!("GPUI iOS: Text input: {:?}", text_str);
+            self.handle_input_text(&text_str, false);
+        }
+    }
 
-            // Try the global text input callback (for our TextInput components).
-            // The text is captured in PENDING_TEXT regardless of whether we also
-            // send key events below.
-            let dispatched = crate::dispatch_text_input(&text_str);
+    fn handle_input_text(&self, text_str: &str, repeated: bool) {
+        log::info!("GPUI iOS: Text input: {:?}", text_str);
 
-            // Route keystrokes through GPUI first so modal bindings (including
-            // Vim normal mode) can consume them before text insertion.
-            for c in text_str.chars() {
-                let key = match c {
-                    '\n' | '\r' => "enter".to_string(),
-                    '\t' => "tab".to_string(),
-                    ' ' => "space".to_string(),
-                    '\u{1b}' => "escape".to_string(),
-                    c if c.is_ascii_uppercase() => c.to_ascii_lowercase().to_string(),
-                    c => c.to_string(),
-                };
-                let keystroke = gpui::Keystroke {
-                    modifiers: Modifiers {
-                        shift: c.is_ascii_uppercase(),
-                        ..Default::default()
-                    },
-                    key,
-                    key_char: Some(c.to_string()),
-                };
+        // The global callback serves our TextInput components. Also route
+        // keystrokes through GPUI so Vim and editor bindings can consume them.
+        let dispatched = crate::dispatch_text_input(text_str);
+        for c in text_str.chars() {
+            let key = match c {
+                '\n' | '\r' => "enter".to_string(),
+                '\t' => "tab".to_string(),
+                ' ' => "space".to_string(),
+                '\u{1b}' => "escape".to_string(),
+                c if c.is_ascii_uppercase() => c.to_ascii_lowercase().to_string(),
+                c => c.to_string(),
+            };
+            let keystroke = gpui::Keystroke {
+                modifiers: Modifiers {
+                    shift: c.is_ascii_uppercase(),
+                    ..Default::default()
+                },
+                key,
+                key_char: Some(c.to_string()),
+            };
 
-                let event = PlatformInput::KeyDown(gpui::KeyDownEvent {
-                    keystroke,
-                    is_held: false,
-                    prefer_character_input: false,
-                });
+            let event = PlatformInput::KeyDown(gpui::KeyDownEvent {
+                keystroke,
+                is_held: repeated,
+                prefer_character_input: false,
+            });
 
-                let result = self
-                    .input_callback
-                    .borrow_mut()
-                    .as_mut()
-                    .map(|callback| callback(event));
-                let handled =
-                    result.is_some_and(|result| !result.propagate || result.default_prevented);
-                if !dispatched && !handled {
-                    if let Some(handler) = self.input_handler.borrow_mut().as_mut() {
-                        handler.replace_text_in_range(None, &c.to_string());
-                    }
+            let result = self
+                .input_callback
+                .borrow_mut()
+                .as_mut()
+                .map(|callback| callback(event));
+            let handled = result.is_some_and(|result| !result.propagate || result.default_prevented);
+            if !dispatched && !handled {
+                if let Some(handler) = self.input_handler.borrow_mut().as_mut() {
+                    handler.replace_text_in_range(None, &c.to_string());
                 }
             }
         }
@@ -1698,6 +1802,10 @@ impl IosWindow {
     /// foreground and background states.
     pub fn notify_active_status_change(&self, is_active: bool) {
         log::info!("GPUI iOS: Window active status changed to: {}", is_active);
+
+        if !is_active {
+            self.held_hardware_keys.borrow_mut().clear();
+        }
 
         if let Some(callback) = self.active_status_callback.borrow_mut().as_mut() {
             callback(is_active);

@@ -319,6 +319,7 @@ pub extern "C" fn gpui_ios_request_frame(window_ptr: *mut c_void) {
     // layout/paint cycle.  This produces the smooth, decelerating inertia
     // scroll that users expect on iOS after a fling gesture.
     window.pump_momentum();
+    window.pump_key_repeats();
 
     // Check if text input arrived since last frame — if so, force a render
     // so drain_pending_text() runs and the UI updates.
