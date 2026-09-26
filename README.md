@@ -27,13 +27,14 @@ The terminal, debugger, AI panel, and broader language-server verification are s
 
 ## How it is built
 
-This repository combines an iOS GPUI platform layer with a small iPad host for Zed's workspace. It is based on [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) and uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The source changes needed for iPad and SSH are kept in [`patches/zed-ios.patch`](patches/zed-ios.patch) and [`patches/trash-ios.patch`](patches/trash-ios.patch), rather than copying the full upstream repositories here.
+This repository combines an iOS GPUI platform layer with a small iPad host for Zed's workspace. It is based on [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) and uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The source changes needed for iPad, SSH, and language tools are kept in patches, rather than copying the full upstream repositories here.
 
 | Path | Purpose |
 | --- | --- |
 | [`example/src/editor_spike.rs`](example/src/editor_spike.rs) | Machine picker, SSH project flow, and Zed workspace host |
 | [`src/ios`](src/ios) | GPUI's iOS platform implementation |
 | [`patches/zed-ios.patch`](patches/zed-ios.patch) | Changes to the pinned Zed source |
+| [`patches/lsp-ios.patch`](patches/lsp-ios.patch) | Remote language-server capability checks for iPad |
 | [`patches/trash-ios.patch`](patches/trash-ios.patch) | iOS support for the Trash dependency |
 | [`scripts/prepare-zed.sh`](scripts/prepare-zed.sh) | Apply the patch and build macOS remote servers |
 | [`example/ios`](example/ios) | Xcode project specification, launch screen, and app assets |

@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 patch="$repo_root/patches/zed-ios.patch"
+lsp_patch="$repo_root/patches/lsp-ios.patch"
 trash_patch="$repo_root/patches/trash-ios.patch"
 expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
@@ -23,13 +24,15 @@ if [[ "$(git -C "$zed_source" rev-parse HEAD)" != "$expected_revision" ]]; then
     exit 1
 fi
 
-if git -C "$zed_source" apply --reverse --check "$patch" 2>/dev/null; then
-    echo "iZed's Zed changes are already applied."
-else
-    git -C "$zed_source" apply --check "$patch"
-    git -C "$zed_source" apply "$patch"
-    echo "Applied iZed's Zed changes."
-fi
+for zed_patch in "$patch" "$lsp_patch"; do
+    if git -C "$zed_source" apply --reverse --check "$zed_patch" 2>/dev/null; then
+        echo "$(basename "$zed_patch") is already applied."
+    else
+        git -C "$zed_source" apply --check "$zed_patch"
+        git -C "$zed_source" apply "$zed_patch"
+        echo "Applied $(basename "$zed_patch")."
+    fi
+done
 
 if git -C "$trash_source" apply --reverse --check "$trash_patch" 2>/dev/null; then
     echo "iZed's iOS Trash changes are already applied."

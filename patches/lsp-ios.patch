@@ -1,0 +1,38 @@
+diff --git a/crates/project/src/lsp_store.rs b/crates/project/src/lsp_store.rs
+index 47d6a7c0d1..a0aa75a919 100644
+--- a/crates/project/src/lsp_store.rs
++++ b/crates/project/src/lsp_store.rs
+@@ -5024,11 +5024,11 @@ impl LspStore {
+         self.language_server_statuses
+             .iter()
+             .filter_map(|(server_id, server_status)| {
+-                // Include servers that are either registered for this language OR
+-                // available to be loaded (for SSH remote mode where adapters like
+-                // ty/pylsp/pyright are registered via register_available_lsp_adapter
+-                // but only loaded on the server side)
+-                let is_relevant = registered_language_servers.contains(&server_status.name)
++                // The remote host owns the language adapters and decides which
++                // server handles a buffer. A mobile client can use the host's
++                // advertised capabilities without loading those adapters locally.
++                let is_relevant = self.upstream_client().is_some()
++                    || registered_language_servers.contains(&server_status.name)
+                     || self.languages.is_lsp_adapter_available(&server_status.name);
+                 is_relevant.then_some(server_id)
+             })
+@@ -5057,11 +5057,11 @@ impl LspStore {
+         self.language_server_statuses
+             .iter()
+             .filter_map(|(server_id, server_status)| {
+-                // Include servers that are either registered for this language OR
+-                // available to be loaded (for SSH remote mode where adapters like
+-                // ty/pylsp/pyright are registered via register_available_lsp_adapter
+-                // but only loaded on the server side)
+-                let is_relevant = registered_language_servers.contains(&server_status.name)
++                // The remote host owns the language adapters and decides which
++                // server handles a buffer. A mobile client can use the host's
++                // advertised capabilities without loading those adapters locally.
++                let is_relevant = self.upstream_client().is_some()
++                    || registered_language_servers.contains(&server_status.name)
+                     || self.languages.is_lsp_adapter_available(&server_status.name);
+                 is_relevant.then_some((server_id, &server_status.name))
+             })
