@@ -19,18 +19,61 @@ use workspace::{AppState, MultiWorkspace, Workspace};
 
 struct SshConnectionStatus {
     client: Entity<RemoteClient>,
+    last_state: ConnectionState,
+    show_transient: bool,
+    transient_generation: u64,
     _subscription: Subscription,
 }
 
 impl SshConnectionStatus {
     fn new(client: Entity<RemoteClient>, cx: &mut Context<Self>) -> Self {
-        let subscription = cx.observe(&client, |_, _, cx| cx.notify());
-        Self { client, _subscription: subscription }
+        let last_state = client.read(cx).connection_state();
+        let subscription = cx.observe(&client, |this, client, cx| {
+            let state = client.read(cx).connection_state();
+            if state == this.last_state {
+                return;
+            }
+            log::info!("iZed SSH connection state: {:?} -> {:?}", this.last_state, state);
+            let previous = std::mem::replace(&mut this.last_state, state);
+            match state {
+                ConnectionState::Connected => {
+                    this.transient_generation += 1;
+                    this.show_transient = false;
+                }
+                ConnectionState::Disconnected => {
+                    this.transient_generation += 1;
+                    this.show_transient = true;
+                }
+                ConnectionState::Connecting | ConnectionState::HeartbeatMissed | ConnectionState::Reconnecting => {
+                    if matches!(previous, ConnectionState::Connected | ConnectionState::Disconnected) {
+                        this.transient_generation += 1;
+                        let generation = this.transient_generation;
+                        this.show_transient = false;
+                        cx.spawn(async move |this, cx| {
+                            smol::Timer::after(Duration::from_millis(1200)).await;
+                            let _ = this.update(cx, |this, cx| {
+                                if this.transient_generation == generation
+                                    && !matches!(this.last_state, ConnectionState::Connected | ConnectionState::Disconnected)
+                                {
+                                    this.show_transient = true;
+                                    cx.notify();
+                                }
+                            });
+                        }).detach();
+                    }
+                }
+            }
+            cx.notify();
+        });
+        Self { client, last_state, show_transient: last_state != ConnectionState::Connected, transient_generation: 0, _subscription: subscription }
     }
 }
 
 impl Render for SshConnectionStatus {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.show_transient {
+            return Empty.into_any_element();
+        }
         let message = match self.client.read(cx).connection_state() {
             ConnectionState::Connected => return Empty.into_any_element(),
             ConnectionState::Connecting | ConnectionState::Reconnecting => "Reconnecting to Machine…",
