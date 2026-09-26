@@ -2,7 +2,7 @@
 name = "ized-app"
 version = "0.1.0"
 edition = "2021"
-description = "iZed iPad app host and GPUI Mobile platform example"
+description = "iZed iPad app host and GPUI platform integration"
 publish = false
 
 [features]
