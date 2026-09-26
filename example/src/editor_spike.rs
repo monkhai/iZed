@@ -1658,7 +1658,7 @@ pub fn open(cx: &mut App) {
     settings::init(cx);
     settings::SettingsStore::update_global(cx, |store, cx| {
         let _ = store.set_user_settings(
-            r#"{"vim_mode":true,"relative_line_numbers":"enabled","format_on_save":"off","enable_language_server":false,"load_direnv":"disabled","buffer_font_family":"JetBrainsMono Nerd Font","buffer_font_weight":300,"buffer_font_size":15,"ui_font_family":"JetBrains Mono","ui_font_weight":500,"ui_font_size":16,"theme":{"mode":"system","light":"Vercel Light","dark":"Vercel Dark"}}"#,
+            r#"{"vim_mode":true,"relative_line_numbers":"enabled","load_direnv":"disabled","buffer_font_family":"JetBrainsMono Nerd Font","buffer_font_weight":300,"buffer_font_size":15,"ui_font_family":"JetBrains Mono","ui_font_weight":500,"ui_font_size":16,"theme":{"mode":"system","light":"Vercel Light","dark":"Vercel Dark"}}"#,
             cx,
         );
     });
@@ -1784,6 +1784,19 @@ pub fn open(cx: &mut App) {
             "editor::ToggleComments",
             "editor::ToggleSoftWrap",
             "editor::ToggleLineNumbers",
+            "editor::Format",
+            "editor::OrganizeImports",
+            "editor::ShowCompletions",
+            "editor::ShowSignatureHelp",
+            "editor::Hover",
+            "editor::ToggleCodeActions",
+            "editor::GoToDefinition",
+            "editor::GoToTypeDefinition",
+            "editor::GoToImplementation",
+            "editor::FindAllReferences",
+            "editor::Rename",
+            "editor::GoToDiagnostic",
+            "editor::GoToPreviousDiagnostic",
             "workspace::ToggleVimMode",
             "project_panel::Rename",
             "project_panel::Duplicate",

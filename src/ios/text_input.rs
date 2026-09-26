@@ -30,7 +30,7 @@ pub fn key_code_to_string(code: u32) -> String {
         0x29 => "escape".to_string(),
         0x2A => "backspace".to_string(),
         0x2B => "tab".to_string(),
-        0x2C => " ".to_string(),
+        0x2C => "space".to_string(),
         0x2D => "-".to_string(),
         0x2E => "=".to_string(),
         0x2F => "[".to_string(),

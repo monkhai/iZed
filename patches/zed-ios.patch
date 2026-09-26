@@ -3908,3 +3908,41 @@ index 0000000000..248b3eccb7
 +<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none">
 +  <path stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M3 5.9C4.1 2.8 6.1 2.1 8 2.1c2.7 0 4.7 1.7 5.4 5.4m-2.6-2 2.6 2 1.7-2.9M13.4 9.3c-1.1 3.3-3.1 4.3-5.4 4.3-2.6 0-4.6-1.8-5-5.3m-1.7 2.8L3 8.3l2.8 1.8"/>
 +</svg>
+diff --git a/crates/project/src/lsp_store.rs b/crates/project/src/lsp_store.rs
+index 47d6a7c0d1..a0aa75a919 100644
+--- a/crates/project/src/lsp_store.rs
++++ b/crates/project/src/lsp_store.rs
+@@ -5024,11 +5024,11 @@ impl LspStore {
+         self.language_server_statuses
+             .iter()
+             .filter_map(|(server_id, server_status)| {
+-                // Include servers that are either registered for this language OR
+-                // available to be loaded (for SSH remote mode where adapters like
+-                // ty/pylsp/pyright are registered via register_available_lsp_adapter
+-                // but only loaded on the server side)
+-                let is_relevant = registered_language_servers.contains(&server_status.name)
++                // The remote host owns the language adapters and decides which
++                // server handles a buffer. A mobile client can use the host's
++                // advertised capabilities without loading those adapters locally.
++                let is_relevant = self.upstream_client().is_some()
++                    || registered_language_servers.contains(&server_status.name)
+                     || self.languages.is_lsp_adapter_available(&server_status.name);
+                 is_relevant.then_some(server_id)
+             })
+@@ -5057,11 +5057,11 @@ impl LspStore {
+         self.language_server_statuses
+             .iter()
+             .filter_map(|(server_id, server_status)| {
+-                // Include servers that are either registered for this language OR
+-                // available to be loaded (for SSH remote mode where adapters like
+-                // ty/pylsp/pyright are registered via register_available_lsp_adapter
+-                // but only loaded on the server side)
+-                let is_relevant = registered_language_servers.contains(&server_status.name)
++                // The remote host owns the language adapters and decides which
++                // server handles a buffer. A mobile client can use the host's
++                // advertised capabilities without loading those adapters locally.
++                let is_relevant = self.upstream_client().is_some()
++                    || registered_language_servers.contains(&server_status.name)
+                     || self.languages.is_lsp_adapter_available(&server_status.name);
+                 is_relevant.then_some((server_id, &server_status.name))
+             })

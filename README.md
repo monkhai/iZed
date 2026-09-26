@@ -20,9 +20,10 @@
 - **Remote-first projects.** Save named macOS Machines, verify their SSH identity, browse remote directories, and reopen recent projects. The app intentionally does not open local iPad files.
 - **Automatic server setup.** iZed transfers its matching Zed remote server to a Machine when needed and shows connection and transfer progress. A separate Zed installation on that Machine is not required.
 - **Zed's workspace.** Editor, tabs, splits, project panel, file operations, File Finder, a curated Command Palette, Vim mode, hardware keyboard shortcuts, and built-in syntax highlighting.
+- **Language tools over SSH.** Zed runs language servers on the selected Machine. Rust diagnostics, completions, hover, Go to Definition, and formatting have been verified on iPad. TypeScript completions, hover, Go to Definition, and formatting have also been verified; other built-in languages use the same remote path.
 - **iPad interaction.** Touch and pointer context menus, trackpad scrolling with momentum, and keyboard-first navigation through the Machine and directory picker.
 
-The terminal, debugger, AI panel, and full language-server experience are still on the roadmap. Command Palette entries are intentionally limited to actions that work in this build.
+The terminal, debugger, AI panel, and broader language-server verification are still on the roadmap. Command Palette entries are intentionally limited to actions available in this build.
 
 ## How it is built
 
