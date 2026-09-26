@@ -85,10 +85,10 @@ void gpui_ios_request_frame(void* window_ptr);
 /// window pointer needed for gpui_ios_request_frame().
 void* gpui_ios_get_window(void);
 
-/// Register the example app's root view with the GPUI platform.
+/// Register the iZed app's root view with the GPUI platform.
 ///
 /// This must be called BEFORE gpui_ios_run_demo() so that the GPUI run loop
-/// knows which view to create. Defined by the example crate (not gpui-mobile).
+/// knows which view to create. Defined by the iZed app crate (not gpui-mobile).
 void gpui_ios_register_app(void);
 
 /// Run the GPUI iOS application.

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="example/ios/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="104" alt="iZed preview icon" />
+  <img src="app/ios/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="104" alt="iZed preview icon" />
 </p>
 
 <h1 align="center">iZed</h1>
@@ -36,7 +36,7 @@ This repository combines an iOS GPUI platform layer with a small iPad host for Z
 
 | Path | Purpose |
 | --- | --- |
-| [`example/src/ized.rs`](example/src/ized.rs) | Machine picker, SSH project flow, and Zed workspace host |
+| [`app/src/ized.rs`](app/src/ized.rs) | Machine picker, SSH project flow, and Zed workspace host |
 | [`src/ios`](src/ios) | GPUI's iOS platform implementation |
 | [`patches/zed-ios.patch`](patches/zed-ios.patch) | Changes to the pinned Zed source |
 | [`patches/lsp-ios.patch`](patches/lsp-ios.patch) | Remote language-server capability checks for iPad |
@@ -48,7 +48,7 @@ This repository combines an iOS GPUI platform layer with a small iPad host for Z
 | [`patches/performance-ios.patch`](patches/performance-ios.patch) | Remote server archive caching |
 | [`patches/trash-ios.patch`](patches/trash-ios.patch) | iOS support for the Trash dependency |
 | [`scripts/prepare-zed.sh`](scripts/prepare-zed.sh) | Apply the patch and build macOS remote servers |
-| [`example/ios`](example/ios) | Xcode project specification, launch screen, and app assets |
+| [`app/ios`](app/ios) | Xcode project specification, launch screen, and app assets |
 
 ## Build for an iPad
 
@@ -62,13 +62,13 @@ This path is currently for macOS developers comfortable with Xcode, Rust, and SS
    ./scripts/prepare-zed.sh
    ```
 
-   This fetches Zed through Cargo, applies the iOS patches, and builds the two macOS remote-server archives. The first run takes a while. The generated archives stay in `example/ios/RemoteServers/` and are not committed.
+   This fetches Zed through Cargo, applies the iOS patches, and builds the two macOS remote-server archives. The first run takes a while. The generated archives stay in `app/ios/RemoteServers/` and are not committed.
    You can run the preparation script again on an already patched checkout.
 
 3. Generate and open the iOS project:
 
    ```sh
-   cd example/ios
+   cd app/ios
    xcodegen generate --spec project.yml
    open iZed.xcodeproj
    ```
@@ -86,6 +86,6 @@ This project is being developed in small, tested steps on a real iPad. Issues an
 
 - [Zed Industries](https://github.com/zed-industries/zed) for Zed and GPUI. iZed is an independent experiment.
 - [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) for the mobile platform starting point. Its original license files are retained in this repository.
-- [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) for the bundled fonts. See [`example/fonts/OFL.txt`](example/fonts/OFL.txt).
+- [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) and [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts) for the bundled fonts. See [`app/fonts/OFL.txt`](app/fonts/OFL.txt).
 
 The Zed name, logo, and preview artwork belong to Zed Industries. See the upstream projects and the license files in this repository for their respective terms.

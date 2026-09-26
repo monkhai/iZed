@@ -35,7 +35,7 @@ set -euo pipefail
 # ── Resolve paths ────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# SCRIPT_DIR = gpui/example
+# SCRIPT_DIR = gpui/app
 GPUI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # GPUI_ROOT  = gpui/
 APP_DIR="$SCRIPT_DIR"
@@ -523,7 +523,7 @@ _android_install_and_launch() {
 
     info "Launching app..."
     adb shell am start \
-        -n "dev.gpui.mobile.example/dev.gpui.mobile.GpuiActivity" \
+        -n "dev.gpui.mobile.app/dev.gpui.mobile.GpuiActivity" \
         -a android.intent.action.MAIN \
         -c android.intent.category.LAUNCHER \
         2>&1

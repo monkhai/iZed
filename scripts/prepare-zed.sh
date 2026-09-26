@@ -15,7 +15,7 @@ zed_patches=("$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patc
 expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
 source_paths="$(
-    cd "$repo_root/example"
+    cd "$repo_root/app"
     cargo metadata --format-version 1 --features ized --filter-platform aarch64-apple-ios |
         python3 -c 'import json, pathlib, sys
 packages = json.load(sys.stdin)["packages"]

@@ -4,7 +4,7 @@ set -euo pipefail
 zed_source="${1:?Pass the Zed source checkout used by the iPad Cargo dependency}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-output_dir="$repo_root/example/ios/RemoteServers"
+output_dir="$repo_root/app/ios/RemoteServers"
 native_target="$(rustc -vV | awk '/^host:/ { print $2 }')"
 mkdir -p "$output_dir"
 

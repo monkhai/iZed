@@ -1,3 +1,3 @@
 patches/*.patch -whitespace
-example/fonts/OFL.txt -whitespace
+app/fonts/OFL.txt -whitespace
 *.bat -whitespace

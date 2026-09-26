@@ -13,8 +13,8 @@ pushd "%SCRIPT_DIR%\.."
 set "GPUI_ROOT=%cd%"
 popd
 
-set "EXAMPLES_DIR=%SCRIPT_DIR%"
-set "ANDROID_GRADLE_DIR=%EXAMPLES_DIR%\android\gradle"
+set "APP_DIR=%SCRIPT_DIR%"
+set "ANDROID_GRADLE_DIR=%APP_DIR%\android\gradle"
 
 :: -- Default Settings ---------------------------------------------------------
 set "PLATFORM=%~1"
@@ -93,7 +93,7 @@ rustup target add %RUST_TARGET% >nul 2>nul
 :: 3. Clean (optional)
 if /I "%CLEAN%" NEQ "true" goto skip_clean
 echo [INFO] Cleaning Rust build artifacts...
-pushd "%EXAMPLES_DIR%"
+pushd "%APP_DIR%"
 cargo clean --target %RUST_TARGET% >nul 2>nul
 popd
 
@@ -108,7 +108,7 @@ echo.
 echo [STEP] Building Rust shared library for %NDK_ABI% (%PROFILE%)
 set "JNI_LIBS_DIR=%ANDROID_GRADLE_DIR%\app\src\main\jniLibs"
 
-pushd "%EXAMPLES_DIR%"
+pushd "%APP_DIR%"
 cargo ndk -t %NDK_ABI% -o "%JNI_LIBS_DIR%" --platform 31 build %CARGO_PROFILE_FLAG%
 set "RUST_RES=%ERRORLEVEL%"
 popd
@@ -173,7 +173,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo [INFO] Launching app...
 :: Use direct command, no complex line continuation
-adb shell am start -n "dev.gpui.mobile.example/android.app.NativeActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
+adb shell am start -n "dev.gpui.mobile.app/android.app.NativeActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
 
 echo [INFO] App launched on Android!
 echo [INFO] View logs with: adb logcat -s ized-app:D

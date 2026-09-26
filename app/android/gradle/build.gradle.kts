@@ -5,7 +5,8 @@
 //
 // Build steps:
 //   1. Compile the Rust library:
-//      cargo ndk -t arm64-v8a -o app/src/main/jniLibs build --example android_app --release
+//      cargo ndk -t arm64-v8a -o app/android/gradle/app/src/main/jniLibs \
+//          build --manifest-path app/Cargo.toml --lib --release
 //
 //   2. Build the APK:
 //      ./gradlew assembleDebug
@@ -33,12 +34,12 @@ tasks.register("clean", Delete::class) {
 tasks.register<Exec>("buildRustRelease") {
     group = "rust"
     description = "Compile the Rust native library for arm64-v8a using cargo-ndk."
-    workingDir = rootProject.projectDir.parentFile.parentFile.parentFile // -> gpui/
+    workingDir = rootProject.projectDir.parentFile.parentFile.parentFile // repository root
     commandLine(
         "cargo", "ndk",
         "-t", "arm64-v8a",
-        "-o", "example/android_app/gradle/app/src/main/jniLibs",
-        "build", "--example", "android_app", "--release"
+        "-o", "app/android/gradle/app/src/main/jniLibs",
+        "build", "--manifest-path", "app/Cargo.toml", "--lib", "--release"
     )
 }
 
@@ -49,8 +50,8 @@ tasks.register<Exec>("buildRustDebug") {
     commandLine(
         "cargo", "ndk",
         "-t", "arm64-v8a",
-        "-o", "example/android_app/gradle/app/src/main/jniLibs",
-        "build", "--example", "android_app"
+        "-o", "app/android/gradle/app/src/main/jniLibs",
+        "build", "--manifest-path", "app/Cargo.toml", "--lib"
     )
 }
 
