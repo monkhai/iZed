@@ -1,0 +1,593 @@
+diff --git a/crates/dap/Cargo.toml b/crates/dap/Cargo.toml
+index a1b107e..5458ce0 100644
+--- a/crates/dap/Cargo.toml
++++ b/crates/dap/Cargo.toml
+@@ -17,14 +17,13 @@ test-support = [
+     "gpui/test-support",
+     "util/test-support",
+     "task/test-support",
+-    "async-pipe",
+     "settings/test-support",
+ ]
+ 
+ [dependencies]
+ anyhow.workspace = true
+ async-compression.workspace = true
+-async-pipe = { workspace = true, optional = true }
++async-pipe.workspace = true
+ async-tar.workspace = true
+ async-trait.workspace = true
+ client.workspace = true
+@@ -53,8 +52,10 @@ util.workspace = true
+ [target.'cfg(not(windows))'.dependencies]
+ libc.workspace = true
+ 
++[target.'cfg(target_os = "ios")'.dependencies]
++remote.workspace = true
++
+ [dev-dependencies]
+-async-pipe.workspace = true
+ gpui = { workspace = true, features = ["test-support"] }
+ settings = { workspace = true, features = ["test-support"] }
+ task = { workspace = true, features = ["test-support"] }
+diff --git a/crates/dap/src/transport.rs b/crates/dap/src/transport.rs
+index 2bb55af..96e7456 100644
+--- a/crates/dap/src/transport.rs
++++ b/crates/dap/src/transport.rs
+@@ -80,6 +80,11 @@ async fn start(
+     log_handlers: LogHandlers,
+     cx: &mut AsyncApp,
+ ) -> Result<Box<dyn Transport>> {
++    #[cfg(target_os = "ios")]
++    if binary.command.as_deref() == Some("ized-ssh-debug-adapter") {
++        return Ok(Box::new(IosSshTransport::start(binary, cx).await?));
++    }
++
+     #[cfg(any(test, feature = "test-support"))]
+     if cfg!(any(test, feature = "test-support")) {
+         if let Some(connection) = binary.connection.clone() {
+@@ -729,6 +734,91 @@ impl Drop for StdioTransport {
+     }
+ }
+ 
++#[cfg(target_os = "ios")]
++struct IosSshTransport {
++    input: Option<async_pipe::PipeWriter>,
++    output: Option<async_pipe::PipeReader>,
++    tasks: Vec<Task<()>>,
++}
++
++#[cfg(target_os = "ios")]
++impl IosSshTransport {
++    async fn start(binary: &DebugAdapterBinary, cx: &mut AsyncApp) -> Result<Self> {
++        let options = serde_json::from_str(
++            binary.arguments.first().context("Missing SSH Machine for debug adapter")?,
++        )?;
++        let program = binary.arguments.get(1).context("Missing remote debug adapter command")?;
++        let session = remote::open_ssh_process(
++            options,
++            program.clone(),
++            binary.arguments[2..].to_vec(),
++            binary.envs.clone(),
++            binary.cwd.clone(),
++        )
++        .await?;
++
++        let (input, mut input_reader) = async_pipe::pipe();
++        let (mut output_writer, output) = async_pipe::pipe();
++        let input_tx = session.input_tx;
++        let output_rx = session.output_rx;
++        let error_rx = session.error_rx;
++        let input_task = cx.background_spawn(async move {
++            let mut buffer = [0u8; 8192];
++            loop {
++                match input_reader.read(&mut buffer).await {
++                    Ok(0) | Err(_) => break,
++                    Ok(length) => {
++                        if input_tx.send(buffer[..length].to_vec()).await.is_err() { break; }
++                    }
++                }
++            }
++        });
++        let output_task = cx.background_spawn(async move {
++            while let Ok(bytes) = output_rx.recv().await {
++                if output_writer.write_all(&bytes).await.is_err() { break; }
++            }
++        });
++        let error_task = cx.background_spawn(async move {
++            while let Ok(bytes) = error_rx.recv().await {
++                log::warn!("SSH debug adapter: {}", String::from_utf8_lossy(&bytes));
++            }
++        });
++        Ok(Self {
++            input: Some(input),
++            output: Some(output),
++            tasks: vec![input_task, output_task, error_task],
++        })
++    }
++}
++
++#[cfg(target_os = "ios")]
++impl Transport for IosSshTransport {
++    fn has_adapter_logs(&self) -> bool { true }
++    fn tcp_arguments(&self) -> Option<TcpArguments> { None }
++    fn kill(&mut self) {
++        self.input.take();
++        self.output.take();
++        self.tasks.clear();
++    }
++    fn connect(
++        &mut self,
++    ) -> Task<Result<(
++        Box<dyn AsyncWrite + Unpin + Send + 'static>,
++        Box<dyn AsyncRead + Unpin + Send + 'static>,
++    )>> {
++        let result = match (self.input.take(), self.output.take()) {
++            (Some(input), Some(output)) => Ok((Box::new(input) as _, Box::new(output) as _)),
++            _ => Err(anyhow!("Cannot reconnect to an SSH debug adapter")),
++        };
++        Task::ready(result)
++    }
++}
++
++#[cfg(target_os = "ios")]
++impl Drop for IosSshTransport {
++    fn drop(&mut self) { self.kill(); }
++}
++
+ #[cfg(any(test, feature = "test-support"))]
+ type RequestHandler = Box<dyn Send + FnMut(u64, serde_json::Value) -> RequestHandling<Response>>;
+ 
+diff --git a/crates/debugger_ui/Cargo.toml b/crates/debugger_ui/Cargo.toml
+index ba98df3..a17f600 100644
+--- a/crates/debugger_ui/Cargo.toml
++++ b/crates/debugger_ui/Cargo.toml
+@@ -55,6 +55,7 @@ paths.workspace = true
+ picker.workspace = true
+ pretty_assertions.workspace = true
+ project.workspace = true
++remote.workspace = true
+ rpc.workspace = true
+ schemars.workspace = true
+ serde.workspace = true
+diff --git a/crates/debugger_ui/src/debugger_panel.rs b/crates/debugger_ui/src/debugger_panel.rs
+index c2d8a7a..d207078 100644
+--- a/crates/debugger_ui/src/debugger_panel.rs
++++ b/crates/debugger_ui/src/debugger_panel.rs
+@@ -69,6 +69,8 @@ pub struct DebugPanel {
+     is_zoomed: bool,
+     _subscriptions: [Subscription; 1],
+     breakpoint_list: Entity<BreakpointList>,
++    #[cfg(target_os = "ios")]
++    mac_debugger_setup_needed: bool,
+ }
+ 
+ impl DebugPanel {
+@@ -77,7 +79,7 @@ impl DebugPanel {
+         window: &mut Window,
+         cx: &mut Context<Workspace>,
+     ) -> Entity<Self> {
+-        cx.new(|cx| {
++        let panel = cx.new(|cx| {
+             let project = workspace.project().clone();
+             let focus_handle = cx.focus_handle();
+             let thread_picker_menu_handle = PopoverMenuHandle::default();
+@@ -111,8 +113,49 @@ impl DebugPanel {
+                 is_zoomed: false,
+                 _subscriptions: [focus_subscription],
+                 debug_scenario_scheduled_last: true,
++                #[cfg(target_os = "ios")]
++                mac_debugger_setup_needed: false,
+             }
++        });
++        #[cfg(target_os = "ios")]
++        panel.update(cx, |panel, cx| panel.check_mac_debugger_access(cx));
++        panel
++    }
++
++    #[cfg(target_os = "ios")]
++    fn check_mac_debugger_access(&mut self, cx: &mut Context<Self>) {
++        let Some(remote_client) = self.project.read(cx).remote_client() else {
++            return;
++        };
++        let remote::RemoteConnectionOptions::Ssh(options) =
++            remote_client.read(cx).connection_options()
++        else {
++            return;
++        };
++
++        cx.spawn(async move |panel, cx| {
++            let result = remote::run_ssh_task(
++                options,
++                "/usr/sbin/DevToolsSecurity".into(),
++                vec!["-status".into()],
++                Default::default(),
++                None,
++            )
++            .await;
++            let needs_setup = match result {
++                Ok((0, output)) => String::from_utf8_lossy(&output)
++                    .to_ascii_lowercase()
++                    .contains("disabled"),
++                _ => false,
++            };
++            panel
++                .update(cx, |panel, cx| {
++                    panel.mac_debugger_setup_needed = needs_setup;
++                    cx.notify();
++                })
++                .ok();
+         })
++        .detach();
+     }
+ 
+     pub(crate) fn focus_active_item(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+@@ -181,6 +224,8 @@ impl DebugPanel {
+         window: &mut Window,
+         cx: &mut Context<Self>,
+     ) {
++        #[cfg(target_os = "ios")]
++        self.check_mac_debugger_access(cx);
+         let dap_store = self.project.read(cx).dap_store();
+         let Some(adapter) = DapRegistry::global(cx).adapter(&scenario.adapter) else {
+             return;
+@@ -1634,6 +1679,43 @@ impl Render for DebugPanel {
+             .size_full()
+             .key_context("DebugPanel")
+             .child(h_flex().children(self.top_controls_strip(window, cx)))
++            .when(cfg!(target_os = "ios") && {
++                #[cfg(target_os = "ios")]
++                { self.mac_debugger_setup_needed }
++                #[cfg(not(target_os = "ios"))]
++                { false }
++            }, |this| {
++                this.child(
++                    v_flex()
++                        .w_full()
++                        .gap_1()
++                        .p_2()
++                        .bg(cx.theme().status().warning_background)
++                        .border_b_1()
++                        .border_color(cx.theme().status().warning_border)
++                        .child(
++                            h_flex()
++                                .gap_1()
++                                .child(Icon::new(IconName::Warning).size(IconSize::Small).color(Color::Warning))
++                                .child(Label::new("Debugger setup on this Mac").size(LabelSize::Small)),
++                        )
++                        .child(Label::new("macOS reports Developer Tools access is disabled. Debugging over SSH may fail until you enable it in Terminal on this Mac.").size(LabelSize::Small))
++                        .child(Label::new("sudo DevToolsSecurity -enable").size(LabelSize::Small).color(Color::Muted))
++                        .child(
++                            h_flex()
++                                .gap_1()
++                                .child(Button::new("copy-devtools-command", "Copy command")
++                                    .on_click(|_, _, cx| {
++                                        cx.write_to_clipboard(ClipboardItem::new_string("sudo DevToolsSecurity -enable".to_owned()));
++                                    }))
++                                .child(Button::new("recheck-devtools-access", "Recheck")
++                                    .on_click(cx.listener(|panel, _, _, cx| {
++                                        #[cfg(target_os = "ios")]
++                                        panel.check_mac_debugger_access(cx);
++                                    }))),
++                        ),
++                )
++            })
+             .track_focus(&self.focus_handle(cx))
+             .on_action({
+                 let this = this.clone();
+diff --git a/crates/debugger_ui/src/new_process_modal.rs b/crates/debugger_ui/src/new_process_modal.rs
+index 1ea974c..4dbbb57 100644
+--- a/crates/debugger_ui/src/new_process_modal.rs
++++ b/crates/debugger_ui/src/new_process_modal.rs
+@@ -85,6 +85,7 @@ impl NewProcessModal {
+         cx: &mut Context<Workspace>,
+     ) {
+         let Some(debug_panel) = workspace.panel::<DebugPanel>(cx) else {
++            log::warn!("Debugger session picker has no panel");
+             return;
+         };
+         let task_store = workspace.project().read(cx).task_store().clone();
+@@ -259,7 +260,7 @@ impl NewProcessModal {
+                             anyhow::Ok(())
+                         }
+                     })
+-                    .detach();
++                    .detach_and_log_err(cx);
+ 
+                     Self {
+                         debug_picker,
+@@ -277,7 +278,7 @@ impl NewProcessModal {
+ 
+             anyhow::Ok(())
+         })
+-        .detach();
++        .detach_and_log_err(cx);
+     }
+ 
+     fn render_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl ui::IntoElement {
+diff --git a/crates/debugger_ui/src/session/running.rs b/crates/debugger_ui/src/session/running.rs
+index 836f76a..13b262b 100644
+--- a/crates/debugger_ui/src/session/running.rs
++++ b/crates/debugger_ui/src/session/running.rs
+@@ -1022,6 +1022,14 @@ impl RunningState {
+             .remote_client()
+             .as_ref()
+             .and_then(|remote| remote.read(cx).shell());
++        #[cfg(target_os = "ios")]
++        let ssh_options = project
++            .read(cx)
++            .remote_client()
++            .and_then(|remote| match remote.read(cx).connection_options() {
++                remote::RemoteConnectionOptions::Ssh(options) => Some(options),
++                _ => None,
++            });
+ 
+         cx.spawn_in(window, async move |this, cx| {
+             let DebugScenario {
+@@ -1145,6 +1153,24 @@ impl RunningState {
+                     args,
+                     ..task.resolved.clone()
+                 };
++                #[cfg(target_os = "ios")]
++                {
++                    let options = ssh_options.clone().context("Debugger build requires an SSH Machine")?;
++                    let (status, output) = remote::run_ssh_task(
++                        options,
++                        task_with_shell.command.clone().context("Build command is empty")?,
++                        task_with_shell.args.clone(),
++                        task_with_shell.env.clone(),
++                        task_with_shell.cwd.clone(),
++                    ).await?;
++                    let output = String::from_utf8_lossy(&output);
++                    log::info!("Remote debugger build exited with status {status}");
++                    if status != 0 {
++                        bail!("Remote build failed (exit {status}): {output}");
++                    }
++                }
++                #[cfg(not(target_os = "ios"))]
++                {
+                 let terminal = project
+                     .update(cx, |project, cx| {
+                         project.create_terminal_task(
+@@ -1180,6 +1206,7 @@ impl RunningState {
+                 if !exit_status.success() {
+                     anyhow::bail!("Build failed");
+                 }
++                }
+                 Some((task.resolved.clone(), locator_name, extra_config))
+             } else {
+                 None
+diff --git a/crates/project/src/debugger/dap_store.rs b/crates/project/src/debugger/dap_store.rs
+index 6d320bc..b5ca8f0 100644
+--- a/crates/project/src/debugger/dap_store.rs
++++ b/crates/project/src/debugger/dap_store.rs
+@@ -306,6 +306,40 @@ impl DapStore {
+                 })
+             }
+             DapStoreMode::Remote(remote) => {
++                #[cfg(target_os = "ios")]
++                {
++                    let mut definition = definition;
++                    if definition.adapter.as_ref() == "CodeLLDB"
++                        && let Some(config) = definition.config.as_object_mut()
++                    {
++                        config.entry("terminal".to_owned())
++                            .or_insert_with(|| serde_json::json!("console"));
++                    }
++                    let remote::RemoteConnectionOptions::Ssh(options) =
++                        remote.remote_client.read(cx).connection_options()
++                    else {
++                        return Task::ready(Err(anyhow!("Only SSH Machines support debugging on iPad")));
++                    };
++                    let request = remote.upstream_client.request(proto::GetDebugAdapterBinary {
++                        session_id: session_id.to_proto(),
++                        project_id: remote.upstream_project_id,
++                        worktree_id: worktree.read(cx).id().to_proto(),
++                        definition: Some(definition.to_proto()),
++                    });
++                    return cx.spawn(async move |_, _| {
++                        let mut binary = DebugAdapterBinary::from_proto(request.await?)?;
++                        anyhow::ensure!(
++                            binary.connection.is_none(),
++                            "This debug adapter requires a TCP connection, which iZed does not support yet"
++                        );
++                        let program = binary.command.take().context("Debug adapter has no command")?;
++                        binary.arguments.insert(0, program);
++                        binary.arguments.insert(0, serde_json::to_string(&options)?);
++                        binary.command = Some("ized-ssh-debug-adapter".into());
++                        Ok(binary)
++                    });
++                }
++
+                 let request = remote
+                     .upstream_client
+                     .request(proto::GetDebugAdapterBinary {
+diff --git a/crates/remote/src/remote.rs b/crates/remote/src/remote.rs
+index 0ba948f..9353b5a 100644
+--- a/crates/remote/src/remote.rs
++++ b/crates/remote/src/remote.rs
+@@ -14,7 +14,7 @@ pub use remote_client::{
+ pub use transport::docker::DockerConnectionOptions;
+ pub use transport::ssh::{SshConnectionOptions, SshPortForwardOption};
+ #[cfg(target_os = "ios")]
+-pub use transport::ssh_ios::{SshHostIdentity, SshServerPhase, SshServerProgress, SshTerminalSession, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, open_ssh_terminal, probe_ssh_host, ssh_home_directory, trust_ssh_host};
++pub use transport::ssh_ios::{SshHostIdentity, SshProcessSession, SshServerPhase, SshServerProgress, SshTerminalSession, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, open_ssh_process, open_ssh_terminal, probe_ssh_host, run_ssh_task, ssh_home_directory, trust_ssh_host};
+ pub use transport::wsl::WslConnectionOptions;
+ #[cfg(target_os = "windows")]
+ pub use transport::wsl::wsl_path_to_windows_path;
+diff --git a/crates/remote/src/transport/ssh_ios.rs b/crates/remote/src/transport/ssh_ios.rs
+index 94213cb..08de023 100644
+--- a/crates/remote/src/transport/ssh_ios.rs
++++ b/crates/remote/src/transport/ssh_ios.rs
+@@ -66,6 +66,171 @@ pub struct SshTerminalSession {
+     pub output_rx: SmolReceiver<Vec<u8>>,
+ }
+ 
++/// A non-PTY process on the Machine, for protocols such as DAP that use stdio.
++pub struct SshProcessSession {
++    pub input_tx: SmolSender<Vec<u8>>,
++    pub output_rx: SmolReceiver<Vec<u8>>,
++    pub error_rx: SmolReceiver<Vec<u8>>,
++}
++
++pub async fn open_ssh_process(
++    options: SshConnectionOptions,
++    program: String,
++    arguments: Vec<String>,
++    environment: HashMap<String, String>,
++    working_directory: Option<PathBuf>,
++) -> Result<SshProcessSession> {
++    let (input_tx, input_rx) = smol::channel::unbounded();
++    let (output_tx, output_rx) = smol::channel::unbounded();
++    let (error_tx, error_rx) = smol::channel::unbounded();
++    let (ready_tx, ready_rx) = smol::channel::bounded::<std::result::Result<(), String>>(1);
++
++    std::thread::Builder::new()
++        .name("ized-ssh-debug-adapter".into())
++        .spawn(move || {
++            let result = run_ssh_process(
++                options,
++                program,
++                arguments,
++                environment,
++                working_directory,
++                input_rx,
++                output_tx,
++                error_tx.clone(),
++                ready_tx.clone(),
++            );
++            if let Err(error) = result {
++                let message = format!("{error:#}");
++                if ready_tx.try_send(Err(message.clone())).is_err() {
++                    error_tx.send_blocking(message.into_bytes()).ok();
++                }
++            }
++        })?;
++
++    ready_rx
++        .recv()
++        .await
++        .context("SSH debug adapter stopped before opening")?
++        .map_err(anyhow::Error::msg)?;
++    Ok(SshProcessSession { input_tx, output_rx, error_rx })
++}
++
++/// Run a finite task on a Machine, returning its exit status and combined output.
++/// Debugger build tasks use this instead of spawning the desktop SSH executable.
++pub async fn run_ssh_task(
++    options: SshConnectionOptions,
++    program: String,
++    arguments: Vec<String>,
++    environment: HashMap<String, String>,
++    working_directory: Option<PathBuf>,
++) -> Result<(u32, Vec<u8>)> {
++    smol::unblock(move || {
++        let mut command = String::new();
++        if let Some(path) = working_directory {
++            command.push_str("cd ");
++            command.push_str(&ssh_quote(&path.to_string_lossy()));
++            command.push_str(" && ");
++        }
++        command.push_str("env");
++        for (name, value) in environment {
++            command.push(' ');
++            command.push_str(&ssh_quote(&format!("{name}={value}")));
++        }
++        command.push(' ');
++        command.push_str(&ssh_quote(&program));
++        for argument in arguments {
++            command.push(' ');
++            command.push_str(&ssh_quote(&argument));
++        }
++
++        let (runtime, handle) = connect_with_inactivity_timeout(&options, None)?;
++        runtime.block_on(async move {
++            let mut channel = handle.channel_open_session().await?;
++            channel.exec(true, command).await?;
++            let mut output = Vec::new();
++            let mut status = None;
++            while let Some(message) = channel.wait().await {
++                match message {
++                    ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, .. } => {
++                        anyhow::ensure!(output.len() + data.len() <= 16 * 1024 * 1024, "Remote build output exceeded 16 MB");
++                        output.extend_from_slice(data.as_ref());
++                    }
++                    ChannelMsg::ExitStatus { exit_status } => status = Some(exit_status),
++                    _ => {}
++                }
++            }
++            Ok((status.context("Remote build ended without an exit status")?, output))
++        })
++    }).await
++}
++
++fn ssh_quote(value: &str) -> String {
++    format!("'{}'", value.replace('\'', "'\\''"))
++}
++
++fn run_ssh_process(
++    options: SshConnectionOptions,
++    program: String,
++    arguments: Vec<String>,
++    environment: HashMap<String, String>,
++    working_directory: Option<PathBuf>,
++    input_rx: SmolReceiver<Vec<u8>>,
++    output_tx: SmolSender<Vec<u8>>,
++    error_tx: SmolSender<Vec<u8>>,
++    ready_tx: SmolSender<std::result::Result<(), String>>,
++) -> Result<()> {
++    let mut command = String::new();
++    if let Some(path) = working_directory {
++        command.push_str("cd ");
++        command.push_str(&ssh_quote(&path.to_string_lossy()));
++        command.push_str(" && ");
++    }
++    command.push_str("exec env");
++    for (name, value) in environment {
++        command.push(' ');
++        command.push_str(&ssh_quote(&format!("{name}={value}")));
++    }
++    command.push(' ');
++    command.push_str(&ssh_quote(&program));
++    for argument in arguments {
++        command.push(' ');
++        command.push_str(&ssh_quote(&argument));
++    }
++
++    let (runtime, handle) = connect_with_inactivity_timeout(&options, None)?;
++    runtime.block_on(async move {
++        let mut channel = handle.channel_open_session().await?;
++        channel.exec(true, command).await?;
++        ready_tx.send(Ok(())).await.ok();
++
++        loop {
++            tokio::select! {
++                message = channel.wait() => match message {
++                    Some(ChannelMsg::Data { data }) => {
++                        if output_tx.send(data.as_ref().to_vec()).await.is_err() { break; }
++                    }
++                    Some(ChannelMsg::ExtendedData { data, .. }) => {
++                        error_tx.send(data.as_ref().to_vec()).await.ok();
++                    }
++                    Some(ChannelMsg::ExitStatus { exit_status }) => {
++                        log::info!("iPad SSH debug adapter exited with status {exit_status}");
++                    }
++                    Some(_) => {}
++                    None => break,
++                },
++                input = input_rx.recv() => match input {
++                    Ok(input) => channel.data_bytes(input).await?,
++                    Err(_) => {
++                        channel.eof().await.ok();
++                        break;
++                    }
++                }
++            }
++        }
++        anyhow::Ok(())
++    })
++}
++
+ pub async fn open_ssh_terminal(
+     options: SshConnectionOptions,
+     working_directory: Option<PathBuf>,

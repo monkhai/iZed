@@ -1616,6 +1616,14 @@ fn open_ssh_project(
                         workspace.update_in(cx, |workspace, window, cx| {
                             workspace.add_panel(terminal_panel, window, cx);
                         })?;
+                        let debug_panel = debugger_ui::debugger_panel::DebugPanel::load(
+                            workspace.downgrade(),
+                            cx,
+                        )
+                        .await?;
+                        workspace.update_in(cx, |workspace, window, cx| {
+                            workspace.add_panel(debug_panel, window, cx);
+                        })?;
                         workspace.update_in(cx, |workspace, window, cx| {
                             if workspace.active_item(cx).is_some() {
                                 workspace.focus_center_pane(window, cx);
@@ -1697,6 +1705,8 @@ pub fn open(cx: &mut App) {
     let client = client::Client::production(cx);
     client::Client::set_global(client.clone(), cx);
     project::Project::init(&client, cx);
+    dap_adapters::init(cx);
+    debugger_ui::init(cx);
     client::init(&client, cx);
 
     let languages = Arc::new(language::LanguageRegistry::new(
@@ -1825,11 +1835,21 @@ pub fn open(cx: &mut App) {
             "terminal_panel::Toggle",
             "terminal_panel::ToggleFocus",
             "workspace::NewTerminal",
+            "debug_panel::ToggleFocus",
+            "debugger::Start",
+            "debugger::Continue",
+            "debugger::Pause",
+            "debugger::StepOver",
+            "debugger::StepInto",
+            "debugger::StepOut",
+            "debugger::Stop",
+            "editor::ToggleBreakpoint",
             "projects::OpenRemote",
         ]);
     });
     project_panel::init(cx);
     terminal_view::init(cx);
+    tasks_ui::init(cx);
     vim::init(cx);
     // iPad hardware keyboards use Command for app shortcuts, as on macOS.
     // settings::DEFAULT_KEYMAP_PATH falls back to Linux on iOS.

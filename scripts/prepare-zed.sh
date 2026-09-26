@@ -5,6 +5,7 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 patch="$repo_root/patches/zed-ios.patch"
 lsp_patch="$repo_root/patches/lsp-ios.patch"
 terminal_patch="$repo_root/patches/terminal-ios.patch"
+debugger_patch="$repo_root/patches/debugger-ios.patch"
 trash_patch="$repo_root/patches/trash-ios.patch"
 expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
@@ -25,7 +26,7 @@ if [[ "$(git -C "$zed_source" rev-parse HEAD)" != "$expected_revision" ]]; then
     exit 1
 fi
 
-for zed_patch in "$patch" "$lsp_patch" "$terminal_patch"; do
+for zed_patch in "$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch"; do
     if git -C "$zed_source" apply --reverse --check "$zed_patch" 2>/dev/null; then
         echo "$(basename "$zed_patch") is already applied."
     else

@@ -6,7 +6,7 @@ description = "Cross-platform GPUI example app for Android and iOS"
 publish = false
 
 [features]
-editor-spike = ["dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:db", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:grammars", "dep:language", "dep:node_runtime", "dep:project", "dep:project_panel", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:smol", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:vim", "dep:workspace", "dep:zed_actions"]
+editor-spike = ["dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:grammars", "dep:language", "dep:node_runtime", "dep:project", "dep:project_panel", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:vim", "dep:workspace", "dep:zed_actions"]
 
 [lib]
 name = "gpui_mobile_example"
@@ -27,7 +27,9 @@ client = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5ec
 collections = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "collections", optional = true }
 command_palette = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "command_palette", optional = true }
 command_palette_hooks = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "command_palette_hooks", optional = true }
+dap_adapters = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "dap_adapters", optional = true }
 db = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "db", optional = true }
+debugger_ui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "debugger_ui", optional = true }
 editor = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "editor", optional = true }
 file_finder = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "file_finder", optional = true }
 fs = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "fs", optional = true }
@@ -42,6 +44,7 @@ remote = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5ec
 settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "settings", optional = true }
 theme = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme", optional = true }
 terminal_view = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "terminal_view", optional = true }
+tasks_ui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "tasks_ui", optional = true }
 theme_settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme_settings", optional = true }
 vim = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "vim", optional = true }
 workspace = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "workspace", optional = true }
