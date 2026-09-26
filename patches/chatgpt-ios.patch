@@ -19,10 +19,10 @@ index b182bb6c27..ea13af803e 100644
  onboarding = { path = "crates/onboarding" }
  opencode = { path = "crates/opencode" }
 diff --git a/crates/agent_ui/src/agent_panel.rs b/crates/agent_ui/src/agent_panel.rs
-index 8c89b1acc9..a459d83389 100644
+index 8c89b1acc9..edbc15af52 100644
 --- a/crates/agent_ui/src/agent_panel.rs
 +++ b/crates/agent_ui/src/agent_panel.rs
-@@ -1229,10 +1229,14 @@ impl AgentPanel {
+@@ -1229,10 +1229,21 @@ impl AgentPanel {
          window: &mut Window,
          cx: &mut Context<Workspace>,
      ) {
@@ -32,15 +32,22 @@ index 8c89b1acc9..a459d83389 100644
 +        if let Some(panel) = workspace.panel::<Self>(cx)
 +            && panel.read(cx).enabled(cx)
          {
-+            panel.update(cx, |panel, cx| {
++            let created_thread = panel.update(cx, |panel, cx| {
 +                if matches!(panel.base_view, BaseView::Uninitialized) {
 +                    panel.new_agent_thread(Agent::NativeAgent, window, cx);
++                    true
++                } else {
++                    false
 +                }
 +            });
++            if created_thread {
++                workspace.focus_panel::<Self>(window, cx);
++                return;
++            }
              workspace.toggle_panel_focus::<Self>(window, cx);
          }
      }
-@@ -1243,10 +1247,14 @@ impl AgentPanel {
+@@ -1243,10 +1254,14 @@ impl AgentPanel {
          window: &mut Window,
          cx: &mut Context<Workspace>,
      ) {
@@ -58,7 +65,7 @@ index 8c89b1acc9..a459d83389 100644
              workspace.focus_panel::<Self>(window, cx);
          }
      }
-@@ -1257,10 +1265,14 @@ impl AgentPanel {
+@@ -1257,10 +1272,21 @@ impl AgentPanel {
          window: &mut Window,
          cx: &mut Context<Workspace>,
      ) {
@@ -68,11 +75,18 @@ index 8c89b1acc9..a459d83389 100644
 +        if let Some(panel) = workspace.panel::<Self>(cx)
 +            && panel.read(cx).enabled(cx)
          {
-+            panel.update(cx, |panel, cx| {
++            let created_thread = panel.update(cx, |panel, cx| {
 +                if matches!(panel.base_view, BaseView::Uninitialized) {
 +                    panel.new_agent_thread(Agent::NativeAgent, window, cx);
++                    true
++                } else {
++                    false
 +                }
 +            });
++            if created_thread {
++                workspace.focus_panel::<Self>(window, cx);
++                return;
++            }
              if !workspace.toggle_panel_focus::<Self>(window, cx) {
                  workspace.close_panel::<Self>(window, cx);
              }

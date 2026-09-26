@@ -2936,10 +2936,32 @@ index cea5b1169b..8999b09eff 100644
      fn new(input: bool) -> Result<Self>;
  }
 diff --git a/crates/project_panel/src/project_panel.rs b/crates/project_panel/src/project_panel.rs
-index b409962d9f..45282eb589 100644
+index b409962d9f..cec7db3a49 100644
 --- a/crates/project_panel/src/project_panel.rs
 +++ b/crates/project_panel/src/project_panel.rs
-@@ -1136,24 +1136,26 @@ impl ProjectPanel {
+@@ -1078,6 +1078,21 @@ impl ProjectPanel {
+         if !self.focus_handle.contains_focused(window, cx) {
+             cx.emit(Event::Focus);
+         }
++        if self.selection.is_none()
++            && let Some(VisibleEntriesForWorktree {
++                worktree_id,
++                entries,
++                ..
++            }) = self.state.visible_entries.first()
++            && let Some(entry) = entries.first()
++        {
++            self.selection = Some(SelectedEntry {
++                worktree_id: *worktree_id,
++                entry_id: entry.id,
++            });
++            self.autoscroll(cx);
++            cx.notify();
++        }
+     }
+ 
+     fn deploy_context_menu(
+@@ -1136,24 +1151,26 @@ impl ProjectPanel {
              let context_menu = ContextMenu::build(window, cx, |menu, _, cx| {
                  menu.context(self.focus_handle.clone()).map(|menu| {
                      if is_read_only {
@@ -2972,7 +2994,7 @@ index b409962d9f..45282eb589 100644
                                  menu.separator()
                                      .action("Find in Folder…", Box::new(NewSearchInDirectory))
                              })
-@@ -1214,7 +1216,7 @@ impl ProjectPanel {
+@@ -1214,7 +1231,7 @@ impl ProjectPanel {
                              .when(!is_root, |menu| {
                                  menu.action("Delete", Box::new(Delete { skip_prompt: false }))
                              })
@@ -2981,7 +3003,7 @@ index b409962d9f..45282eb589 100644
                                  menu.separator()
                                      .action(
                                          "Add Project to Workspace…",
-@@ -3846,15 +3848,27 @@ impl ProjectPanel {
+@@ -3846,15 +3863,27 @@ impl ProjectPanel {
      }
  
      fn external_paths_from_system_clipboard(&self, cx: &App) -> Option<ExternalPaths> {

@@ -2,6 +2,11 @@
 // limited to Zed components initialized by the iPad workspace.
 [
   {
+    "bindings": {
+      "cmd-i": "agent::Toggle"
+    }
+  },
+  {
     "context": "Workspace",
     "bindings": {
       "cmd-b": "project_panel::Toggle",
