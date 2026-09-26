@@ -28,6 +28,8 @@
 
 Broader language-server and Agent workflow verification are still on the roadmap. Command Palette entries are intentionally limited to actions available in this build.
 
+For model verification, the iPad debug log records the requested model ID and the model ID reported by each completed ChatGPT response, without logging prompts or credentials. Zed can make a separate request with a smaller model to name an Agent thread.
+
 ## How it is built
 
 This repository combines an iOS GPUI platform layer with a small iPad host for Zed's workspace. It is based on [GPUI Mobile](https://github.com/itsbalamurali/gpui-mobile) and uses a pinned [Zed](https://github.com/zed-industries/zed) revision. The source changes needed for iPad, SSH, and language tools are kept in patches, rather than copying the full upstream repositories here.

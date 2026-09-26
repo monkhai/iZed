@@ -182,10 +182,10 @@ index 35a1e90e44..8b37975f6c 100644
  pub mod vercel;
 diff --git a/crates/language_models/src/provider/openai_subscribed.rs b/crates/language_models/src/provider/openai_subscribed.rs
 new file mode 100644
-index 0000000000..ffbd307306
+index 0000000000..9d5307a3c7
 --- /dev/null
 +++ b/crates/language_models/src/provider/openai_subscribed.rs
-@@ -0,0 +1,1799 @@
+@@ -0,0 +1,1810 @@
 +use anyhow::{Context as _, Result, anyhow};
 +use base64::Engine as _;
 +use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -838,6 +838,7 @@ index 0000000000..ffbd307306
 +        let state = self.state.downgrade();
 +        let http_client = self.http_client.clone();
 +        let request_limiter = self.request_limiter.clone();
++        let requested_model = self.model.id().to_owned();
 +
 +        let future = cx.spawn(async move |cx| {
 +            let creds = get_fresh_credentials(&state, &http_client, cx).await?;
@@ -871,7 +872,17 @@ index 0000000000..ffbd307306
 +
 +        async move {
 +            let mapper = OpenAiResponseEventMapper::new();
-+            Ok(mapper.map_stream(future.await?.boxed()).boxed())
++            let stream = future.await?.inspect(move |event| {
++                if let Ok(open_ai::responses::StreamEvent::Completed { response }) = event {
++                    log::info!(
++                        "ChatGPT model check: requested={}, returned={}, tier={}",
++                        requested_model,
++                        response.model.as_deref().unwrap_or("not reported"),
++                        response.service_tier.as_deref().unwrap_or("not reported"),
++                    );
++                }
++            });
++            Ok(mapper.map_stream(stream.boxed()).boxed())
 +        }
 +        .boxed()
 +    }
@@ -2543,7 +2554,7 @@ index 81fa79d35e..ad7827e5d3 100644
  }
  
 diff --git a/crates/open_ai/src/responses.rs b/crates/open_ai/src/responses.rs
-index 34dbd46c37..75324a0b43 100644
+index 34dbd46c37..0a278bdd22 100644
 --- a/crates/open_ai/src/responses.rs
 +++ b/crates/open_ai/src/responses.rs
 @@ -9,6 +9,10 @@ use crate::{ReasoningEffort, RequestError, Role, ToolChoice};
@@ -2566,7 +2577,18 @@ index 34dbd46c37..75324a0b43 100644
  }
  
  #[derive(Debug, Serialize, Deserialize)]
-@@ -315,13 +321,27 @@ pub async fn stream_response(
+@@ -226,6 +232,10 @@ pub struct ResponseSummary {
+     #[serde(default)]
+     pub id: Option<String>,
+     #[serde(default)]
++    pub model: Option<String>,
++    #[serde(default)]
++    pub service_tier: Option<String>,
++    #[serde(default)]
+     pub status: Option<String>,
+     #[serde(default)]
+     pub status_details: Option<ResponseStatusDetails>,
+@@ -315,13 +325,27 @@ pub async fn stream_response(
      api_url: &str,
      api_key: &str,
      request: Request,
