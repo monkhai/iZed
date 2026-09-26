@@ -1,20 +1,13 @@
-- Improve the UX of the APIs exposed by the library.
-- Assitive technologies support (e.g., screen readers, voice control).
-- Deeplinking?
-- Provide inbuilt routing/navigation solution ?
-- Maps?
-- In-app purchases?
-- Assets management?
-- Google Fonts?
+# iZed roadmap
 
-- Use the new Component View System from GPUI once its merged and rewrite the UI and packages using the new system. This will allow us to have a more modular and reusable codebase, and also make it easier to maintain and extend the library in the future. https://github.com/zed-industries/zed/pull/51030
+iZed is a work in progress. The [README](README.md) describes what has been
+verified on a physical iPad; this list tracks areas that still need work.
 
-Screens to implement:
-
-https://raw.githubusercontent.com/zed-industries/zed/refs/heads/main/crates/gpui/examples/gif_viewer.rs
-https://raw.githubusercontent.com/zed-industries/zed/refs/heads/main/crates/gpui/examples/image_gallery.rs
-https://raw.githubusercontent.com/zed-industries/zed/refs/heads/main/crates/gpui/examples/image_loading.rs
-
-Update the text inputs with all the functionality from here https://raw.githubusercontent.com/zed-industries/zed/refs/heads/main/crates/gpui/examples/input.rs
-
-- [ ] **Texture-based composition mode (future)** — offscreen rendering for better perf
+- Test more of Zed's built-in languages and their remote language servers.
+- Make remote workspace recovery predictable after long background periods and
+  network changes.
+- Improve accessibility for the Machine picker, panels, and editor controls.
+- Continue matching Zed's keyboard navigation and panel behavior on iPad.
+- Reduce the downstream patch stack by contributing reusable iOS support
+  upstream where appropriate.
+- Document a repeatable release build and distribution process.

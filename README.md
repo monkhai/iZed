@@ -10,9 +10,9 @@
 > **Work in progress.** This is an experimental, unofficial port built for real-device iteration. It is not ready for general use, and it is not affiliated with Zed Industries.
 
 <p align="center">
-  <img src="docs/workspace-simulator.png" width="720" alt="Early iZed workspace build showing Zed's editor, tabs, and project panel on iPad" />
+  <img src="docs/ized-ipad-workspace.png" width="900" alt="iZed on iPad with Rust editor, SSH project tree, terminal, and Agent Panel" />
   <br />
-  <em>Early workspace build on the iPad simulator. The Machine picker and SSH flow have since evolved.</em>
+  <em>Current development build on a physical iPad.</em>
 </p>
 
 ## What works today
@@ -44,6 +44,8 @@ This repository combines an iOS GPUI platform layer with a small iPad host for Z
 | [`patches/debugger-ios.patch`](patches/debugger-ios.patch) | Remote debugger integration for iPad |
 | [`patches/ai-ios.patch`](patches/ai-ios.patch) | Agent Panel and prompt storage support for iPad |
 | [`patches/chatgpt-ios.patch`](patches/chatgpt-ios.patch) | ChatGPT subscription provider and iPad sign-in flow |
+| [`patches/status-bar-ios.patch`](patches/status-bar-ios.patch) | iPad status bar and sidebar layout fixes |
+| [`patches/performance-ios.patch`](patches/performance-ios.patch) | Remote server archive caching |
 | [`patches/trash-ios.patch`](patches/trash-ios.patch) | iOS support for the Trash dependency |
 | [`scripts/prepare-zed.sh`](scripts/prepare-zed.sh) | Apply the patch and build macOS remote servers |
 | [`example/ios`](example/ios) | Xcode project specification, launch screen, and app assets |
@@ -61,6 +63,7 @@ This path is currently for macOS developers comfortable with Xcode, Rust, and SS
    ```
 
    This fetches Zed through Cargo, applies the iOS patches, and builds the two macOS remote-server archives. The first run takes a while. The generated archives stay in `example/ios/RemoteServers/` and are not committed.
+   You can run the preparation script again on an already patched checkout.
 
 3. Generate and open the iOS project:
 

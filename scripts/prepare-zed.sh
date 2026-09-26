@@ -11,6 +11,7 @@ chatgpt_patch="$repo_root/patches/chatgpt-ios.patch"
 status_bar_patch="$repo_root/patches/status-bar-ios.patch"
 performance_patch="$repo_root/patches/performance-ios.patch"
 trash_patch="$repo_root/patches/trash-ios.patch"
+zed_patches=("$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patch" "$chatgpt_patch" "$status_bar_patch" "$performance_patch")
 expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
 source_paths="$(
@@ -30,15 +31,24 @@ if [[ "$(git -C "$zed_source" rev-parse HEAD)" != "$expected_revision" ]]; then
     exit 1
 fi
 
-for zed_patch in "$patch" "$lsp_patch" "$terminal_patch" "$debugger_patch" "$ai_patch" "$chatgpt_patch" "$status_bar_patch" "$performance_patch"; do
-    if git -C "$zed_source" apply --reverse --check "$zed_patch" 2>/dev/null; then
-        echo "$(basename "$zed_patch") is already applied."
-    else
-        git -C "$zed_source" apply --check "$zed_patch"
-        git -C "$zed_source" apply "$zed_patch"
-        echo "Applied $(basename "$zed_patch")."
-    fi
-done
+patch_state=0
+python3 "$repo_root/scripts/check-zed-patch-state.py" "$zed_source" "${zed_patches[@]}" || patch_state=$?
+if [[ "$patch_state" -eq 0 ]]; then
+    echo "All iZed Zed patches are already applied."
+elif [[ "$patch_state" -eq 1 ]]; then
+    for zed_patch in "${zed_patches[@]}"; do
+        if git -C "$zed_source" apply --reverse --check "$zed_patch" 2>/dev/null; then
+            echo "$(basename "$zed_patch") is already applied."
+        else
+            git -C "$zed_source" apply --check "$zed_patch"
+            git -C "$zed_source" apply "$zed_patch"
+            echo "Applied $(basename "$zed_patch")."
+        fi
+    done
+else
+    echo "Could not verify the Zed patch stack." >&2
+    exit 1
+fi
 
 if git -C "$trash_source" apply --reverse --check "$trash_patch" 2>/dev/null; then
     echo "iZed's iOS Trash changes are already applied."
