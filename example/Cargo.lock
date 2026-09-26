@@ -6179,64 +6179,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpui-mobile-example"
-version = "0.1.0"
-dependencies = [
- "agent_ui",
- "android-activity",
- "android_logger",
- "anyhow",
- "askpass",
- "assets",
- "client",
- "collections",
- "command_palette",
- "command_palette_hooks",
- "dap_adapters",
- "db",
- "debugger_ui",
- "editor",
- "file_finder",
- "fs",
- "futures",
- "gpui",
- "gpui-mobile",
- "gpui_tokio",
- "grammars",
- "language",
- "language_model",
- "language_models",
- "log",
- "node_runtime",
- "objc2",
- "paths",
- "project",
- "project_panel",
- "prompt_store",
- "release_channel",
- "remote",
- "reqwest_client",
- "rust-embed",
- "semver",
- "serde",
- "serde_json",
- "session",
- "settings",
- "sidebar",
- "smol",
- "tasks_ui",
- "terminal_view",
- "theme",
- "theme_settings",
- "ui",
- "util",
- "vim",
- "workspace",
- "zed-reqwest",
- "zed_actions",
-]
-
-[[package]]
 name = "gpui_macros"
 version = "0.1.0"
 source = "git+https://github.com/zed-industries/zed?rev=5688167d224b5eca54875d49afb8bfd73a07915a#5688167d224b5eca54875d49afb8bfd73a07915a"
@@ -7270,6 +7212,64 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "ized-app"
+version = "0.1.0"
+dependencies = [
+ "agent_ui",
+ "android-activity",
+ "android_logger",
+ "anyhow",
+ "askpass",
+ "assets",
+ "client",
+ "collections",
+ "command_palette",
+ "command_palette_hooks",
+ "dap_adapters",
+ "db",
+ "debugger_ui",
+ "editor",
+ "file_finder",
+ "fs",
+ "futures",
+ "gpui",
+ "gpui-mobile",
+ "gpui_tokio",
+ "grammars",
+ "language",
+ "language_model",
+ "language_models",
+ "log",
+ "node_runtime",
+ "objc2",
+ "paths",
+ "project",
+ "project_panel",
+ "prompt_store",
+ "release_channel",
+ "remote",
+ "reqwest_client",
+ "rust-embed",
+ "semver",
+ "serde",
+ "serde_json",
+ "session",
+ "settings",
+ "sidebar",
+ "smol",
+ "tasks_ui",
+ "terminal_view",
+ "theme",
+ "theme_settings",
+ "ui",
+ "util",
+ "vim",
+ "workspace",
+ "zed-reqwest",
+ "zed_actions",
+]
 
 [[package]]
 name = "jiff"

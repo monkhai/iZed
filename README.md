@@ -36,7 +36,7 @@ This repository combines an iOS GPUI platform layer with a small iPad host for Z
 
 | Path | Purpose |
 | --- | --- |
-| [`example/src/editor_spike.rs`](example/src/editor_spike.rs) | Machine picker, SSH project flow, and Zed workspace host |
+| [`example/src/ized.rs`](example/src/ized.rs) | Machine picker, SSH project flow, and Zed workspace host |
 | [`src/ios`](src/ios) | GPUI's iOS platform implementation |
 | [`patches/zed-ios.patch`](patches/zed-ios.patch) | Changes to the pinned Zed source |
 | [`patches/lsp-ios.patch`](patches/lsp-ios.patch) | Remote language-server capability checks for iPad |
@@ -70,7 +70,7 @@ This path is currently for macOS developers comfortable with Xcode, Rust, and SS
    ```sh
    cd example/ios
    xcodegen generate --spec project.yml
-   open GpuiExample.xcodeproj
+   open iZed.xcodeproj
    ```
 
 4. Select your iPad and signing team in Xcode, then Run. Use a unique bundle identifier for your own build. The default identifier in the project specification is only a development placeholder.

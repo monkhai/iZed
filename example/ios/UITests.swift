@@ -1,6 +1,6 @@
 import XCTest
 
-final class GpuiExampleUITests: XCTestCase {
+final class iZedUITests: XCTestCase {
     func testFormTextEntry() {
         let app = XCUIApplication()
         app.launch()

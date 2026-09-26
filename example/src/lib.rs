@@ -1,60 +1,8 @@
-//! Cross-platform GPUI example app.
+//! iZed's iPad host for Zed's remote workspace.
 //!
-//! This crate provides a multi-screen GPUI demo app that runs on both
-//! **Android** and **iOS**.  The UI code (screens, router, navigation) is
-//! fully shared; only the platform initialisation differs.
-//!
-//! ## Screens
-//!
-//! - **Home** — welcome message, colour swatches, stats, and quick-nav cards.
-//! - **Counter** — increment / decrement / reset a shared tap counter.
-//! - **Settings** — toggle dark mode, reset counter, change user name.
-//! - **About** — app info, technology stack, architecture, and credits.
-//!
-//! ## Entry points
-//!
-//! ### Android
-//!
-//! This crate defines `android_main` directly — the `android-activity` crate
-//! calls it on a dedicated native thread after loading the `.so`.
-//!
-//! ### iOS
-//!
-//! The companion `main.rs` binary calls [`ios_main`] which creates an
-//! `IosPlatform`, opens a fullscreen window with the `Router`, and hands
-//! control to the GPUI run loop.
-//!
-//! ## Window lifecycle
-//!
-//! On Android, windows are NOT created by calling `cx.open_window(...)` at
-//! startup.  Instead, the system delivers a `MainEvent::InitWindow` lifecycle
-//! event when the native surface is ready.
-//!
-//! The GPUI `Application::run` callback (the `|cx| { ... }` closure) is
-//! **deferred** until the native window exists.  `Platform::run` blocks on the
-//! Android event loop, and the finish-launching callback is invoked from
-//! inside `run_event_loop` once `InitWindow` has been processed.  This keeps
-//! the `Application` (and its internal `Rc<RefCell<AppContext>>`) alive on the
-//! call stack for the entire lifetime of the event loop, so that weak
-//! references held by GPUI's `on_request_frame` / `on_input` callbacks remain
-//! valid.
-//!
-//! On iOS, `Application::run` similarly blocks until the app exits.
-//! `IosPlatform` hooks into the UIKit lifecycle via Objective-C FFI callbacks.
-//!
-//! ## Building
-//!
-//! ```text
-//! # Android
-//! rustup target add aarch64-linux-android
-//! cargo ndk -t arm64-v8a build -p gpui-mobile-example
-//!
-//! # iOS simulator
-//! cargo build --target aarch64-apple-ios-sim -p gpui-mobile-example --features font-kit
-//!
-//! # iOS device
-//! cargo build --target aarch64-apple-ios -p gpui-mobile-example --features font-kit
-//! ```
+//! The iOS app registers [`ized`] as its GPUI root view. The inherited
+//! Android demo remains available as a platform example through [`screens`].
+//! Build instructions for a physical iPad are in the repository README.
 
 // Link gpui-mobile so its symbols (jni helpers, platform, etc.) are available.
 extern crate gpui_mobile;
@@ -62,8 +10,8 @@ extern crate gpui_mobile;
 pub mod demos;
 pub mod screens;
 
-#[cfg(all(target_os = "ios", feature = "editor-spike"))]
-mod editor_spike;
+#[cfg(all(target_os = "ios", feature = "ized"))]
+mod ized;
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
 use gpui::{prelude::*, App, WindowOptions};
@@ -90,7 +38,7 @@ fn android_main(app: android_activity::AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Info)
-            .with_tag("gpui-mobile-example"),
+            .with_tag("ized-app"),
     );
 
     // Panic hook — routes panics to logcat instead of silently aborting.
@@ -139,12 +87,12 @@ fn android_main(app: android_activity::AndroidApp) {
 // iOS entry point
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Register the example app's root view with the GPUI iOS platform.
+/// Register the iZed root view with the GPUI iOS platform.
 ///
 /// This is called from `main.m` **before** `gpui_ios_run_demo()` so that
 /// when the GPUI run loop starts it knows which view to create.
 ///
-/// The symbol lives in the example crate's static lib which is force-loaded
+/// The symbol lives in the iZed app's static library, which is force-loaded
 /// alongside `libgpui_mobile.a` by the Xcode linker.
 /// Minimal logger that routes Rust `log` crate messages through NSLog.
 #[cfg(target_os = "ios")]
@@ -191,7 +139,7 @@ fn nslog(msg: &str) {
 #[cfg(target_os = "ios")]
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_register_app() {
-    #[cfg(feature = "editor-spike")]
+    #[cfg(feature = "ized")]
     gpui_mobile::ios::ffi::set_asset_source(assets::Assets);
 
     // Set up Rust logging → NSLog so log::info! etc. appear in devicectl --console.
@@ -204,9 +152,9 @@ pub extern "C" fn gpui_ios_register_app() {
     }));
 
     gpui_mobile::ios::ffi::set_app_callback(Box::new(|cx: &mut App| {
-        #[cfg(feature = "editor-spike")]
-        editor_spike::open(cx);
-        #[cfg(not(feature = "editor-spike"))]
+        #[cfg(feature = "ized")]
+        ized::open(cx);
+        #[cfg(not(feature = "ized"))]
         open_main_window(cx);
     }));
 }

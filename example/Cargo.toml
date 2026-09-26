@@ -1,20 +1,20 @@
 [package]
-name = "gpui-mobile-example"
+name = "ized-app"
 version = "0.1.0"
 edition = "2021"
-description = "Cross-platform GPUI example app for Android and iOS"
+description = "iZed iPad app host and GPUI Mobile platform example"
 publish = false
 
 [features]
-editor-spike = ["dep:agent_ui", "dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:gpui_tokio", "dep:grammars", "dep:language", "dep:language_model", "dep:language_models", "dep:node_runtime", "dep:paths", "dep:project", "dep:project_panel", "dep:prompt_store", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:sidebar", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:util", "dep:vim", "dep:workspace", "dep:zed_actions"]
+ized = ["dep:agent_ui", "dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:gpui_tokio", "dep:grammars", "dep:language", "dep:language_model", "dep:language_models", "dep:node_runtime", "dep:paths", "dep:project", "dep:project_panel", "dep:prompt_store", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:sidebar", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:util", "dep:vim", "dep:workspace", "dep:zed_actions"]
 
 [lib]
-name = "gpui_mobile_example"
+name = "ized_app"
 crate-type = ["cdylib", "staticlib", "lib"]
 path = "src/lib.rs"
 
 [[bin]]
-name = "gpui-example"
+name = "ized-app"
 path = "src/main.rs"
 
 [dependencies]

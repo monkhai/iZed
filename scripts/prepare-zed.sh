@@ -16,7 +16,7 @@ expected_revision="5688167d224b5eca54875d49afb8bfd73a07915a"
 
 source_paths="$(
     cd "$repo_root/example"
-    cargo metadata --format-version 1 --features editor-spike --filter-platform aarch64-apple-ios |
+    cargo metadata --format-version 1 --features ized --filter-platform aarch64-apple-ios |
         python3 -c 'import json, pathlib, sys
 packages = json.load(sys.stdin)["packages"]
 for name, parent_count in (("ui", 2), ("trash", 0)):

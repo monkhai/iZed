@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────────
-# build.sh — Build & run the GPUI example app on iOS or Android
+# build.sh — Build and run the iZed app on iOS or the GPUI demo on Android
 #
 # Usage:
 #   ./build.sh ios   [--device | --simulator] [--release] [--clean]
@@ -38,9 +38,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # SCRIPT_DIR = gpui/example
 GPUI_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # GPUI_ROOT  = gpui/
-EXAMPLES_DIR="$SCRIPT_DIR"
-IOS_DIR="$EXAMPLES_DIR/ios"
-ANDROID_GRADLE_DIR="$EXAMPLES_DIR/android/gradle"
+APP_DIR="$SCRIPT_DIR"
+IOS_DIR="$APP_DIR/ios"
+ANDROID_GRADLE_DIR="$APP_DIR/android/gradle"
 
 # ── Colours (if stdout is a terminal) ────────────────────────────────────────
 
@@ -174,31 +174,32 @@ build_ios() {
         cd "$GPUI_ROOT"
         cargo clean --target "$rust_target" 2>/dev/null || true
 
-        if [[ -d "$IOS_DIR/GpuiExample.xcodeproj" ]]; then
+        if [[ -d "$IOS_DIR/iZed.xcodeproj" ]]; then
             info "Cleaning Xcode derived data..."
             xcodebuild clean \
-                -project "$IOS_DIR/GpuiExample.xcodeproj" \
-                -scheme GpuiExample \
+                -project "$IOS_DIR/iZed.xcodeproj" \
+                -scheme iZed \
                 -configuration "$xcode_config" \
                 2>/dev/null || true
         fi
     fi
 
-    # ── Build the example crate (it depends on gpui-mobile, so both are built) ─
-    step "Building example crate for ${rust_target} (${PROFILE})"
+    # ── Build the iZed app crate (and its gpui-mobile dependency) ─────────
+    step "Building iZed app for ${rust_target} (${PROFILE})"
 
-    cd "$EXAMPLES_DIR"
+    cd "$APP_DIR"
     cargo build \
         --target "$rust_target" \
+        --features ized \
         $cargo_profile_flag \
         2>&1
 
-    local example_lib="$EXAMPLES_DIR/target/${rust_target}/${cargo_profile_dir}/libgpui_mobile_example.a"
-    if [[ ! -f "$example_lib" ]]; then
-        error "Example static library not found at: $example_lib"
+    local app_lib="$APP_DIR/target/${rust_target}/${cargo_profile_dir}/libized_app.a"
+    if [[ ! -f "$app_lib" ]]; then
+        error "iZed static library not found at: $app_lib"
         exit 1
     fi
-    info "Example static library: $example_lib"
+    info "iZed static library: $app_lib"
 
     # ── Generate Xcode project via XcodeGen ──────────────────────────────
     step "Generating Xcode project with XcodeGen"
@@ -210,7 +211,7 @@ build_ios() {
 
     cd "$IOS_DIR"
     xcodegen generate --spec project.yml
-    info "Xcode project generated at: $IOS_DIR/GpuiExample.xcodeproj"
+    info "Xcode project generated at: $IOS_DIR/iZed.xcodeproj"
 
     # ── Build with xcodebuild ────────────────────────────────────────────
     step "Building Xcode project (${xcode_config}, ${xcode_sdk})"
@@ -228,8 +229,8 @@ build_ios() {
         # devicectl returns a CoreDevice UUID which does NOT match the UDID
         # that xcodebuild expects in "-destination id=...".
         device_id=$(xcodebuild \
-            -project GpuiExample.xcodeproj \
-            -scheme GpuiExample \
+            -project iZed.xcodeproj \
+            -scheme iZed \
             -showdestinations 2>/dev/null \
             | grep "platform:iOS," \
             | grep -v Simulator \
@@ -257,8 +258,8 @@ build_ios() {
     fi
 
     xcodebuild \
-        -project GpuiExample.xcodeproj \
-        -scheme GpuiExample \
+        -project iZed.xcodeproj \
+        -scheme iZed \
         -configuration "$xcode_config" \
         -destination "$resolved_destination" \
         -derivedDataPath "$build_dir" \
@@ -290,7 +291,7 @@ _ios_run_simulator() {
 
     # Find the .app bundle
     local app_path
-    app_path=$(find "$build_dir" -path "*/Build/Products/${xcode_config}-iphonesimulator/GpuiExample.app" -type d | head -1)
+    app_path=$(find "$build_dir" -path "*/Build/Products/${xcode_config}-iphonesimulator/iZed.app" -type d | head -1)
 
     if [[ -z "$app_path" ]]; then
         error "Could not find .app bundle in build output."
@@ -333,7 +334,7 @@ _ios_run_device() {
 
     # Find the .app bundle for iphoneos
     local app_path
-    app_path=$(find "$build_dir" -path "*/Build/Products/${xcode_config}-iphoneos/GpuiExample.app" -type d | head -1)
+    app_path=$(find "$build_dir" -path "*/Build/Products/${xcode_config}-iphoneos/iZed.app" -type d | head -1)
 
     if [[ -z "$app_path" ]]; then
         error "Could not find .app bundle in build output."
@@ -423,7 +424,7 @@ build_android() {
     # ── Clean (optional) ─────────────────────────────────────────────────
     if $CLEAN; then
         info "Cleaning Rust build artifacts..."
-        cd "$EXAMPLES_DIR"
+        cd "$APP_DIR"
         cargo clean --target "$rust_target" 2>/dev/null || true
 
         info "Cleaning Gradle..."
@@ -436,7 +437,7 @@ build_android() {
 
     local jni_libs_dir="$ANDROID_GRADLE_DIR/app/src/main/jniLibs"
 
-    cd "$EXAMPLES_DIR"
+    cd "$APP_DIR"
     cargo ndk \
         -t "$ndk_abi" \
         -o "$jni_libs_dir" \
@@ -445,7 +446,7 @@ build_android() {
         $cargo_profile_flag \
         2>&1
 
-    local so_path="$jni_libs_dir/${ndk_abi}/libgpui_mobile_example.so"
+    local so_path="$jni_libs_dir/${ndk_abi}/libized_app.so"
     if [[ ! -f "$so_path" ]]; then
         error "Shared library not found at: $so_path"
         exit 1
@@ -530,7 +531,7 @@ _android_install_and_launch() {
     info "App launched on Android! 🚀"
 
     echo ""
-    info "View logs with:  adb logcat -s gpui-mobile-example:D"
+    info "View logs with:  adb logcat -s ized-app:D"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════

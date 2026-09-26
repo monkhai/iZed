@@ -35,7 +35,7 @@ android {
         }
 
         // Forward the library name to the manifest via a placeholder.
-        manifestPlaceholders["nativeLibraryName"] = "gpui_mobile_example"
+        manifestPlaceholders["nativeLibraryName"] = "ized_app"
     }
 
     buildTypes {
@@ -78,10 +78,10 @@ android {
         // release mode and stripping again can break backtraces.
         jniLibs {
             keepDebugSymbols += listOf(
-                "*/arm64-v8a/libgpui_mobile_example.so",
-                "*/armeabi-v7a/libgpui_mobile_example.so",
-                "*/x86_64/libgpui_mobile_example.so",
-                "*/x86/libgpui_mobile_example.so"
+                "*/arm64-v8a/libized_app.so",
+                "*/armeabi-v7a/libized_app.so",
+                "*/x86_64/libized_app.so",
+                "*/x86/libized_app.so"
             )
         }
     }

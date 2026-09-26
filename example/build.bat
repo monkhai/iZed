@@ -176,7 +176,7 @@ echo [INFO] Launching app...
 adb shell am start -n "dev.gpui.mobile.example/android.app.NativeActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
 
 echo [INFO] App launched on Android!
-echo [INFO] View logs with: adb logcat -s gpui-mobile-example:D
+echo [INFO] View logs with: adb logcat -s ized-app:D
 
 :done
 echo.
