@@ -1,0 +1,2613 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index b182bb6c27..ea13af803e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -135,6 +135,7 @@ members = [
+     "crates/net",
+     "crates/node_runtime",
+     "crates/notifications",
++    "crates/oauth_callback_server",
+     "crates/ollama",
+     "crates/onboarding",
+     "crates/opencode",
+@@ -391,6 +392,7 @@ nc = { path = "crates/nc" }
+ net = { path = "crates/net" }
+ node_runtime = { path = "crates/node_runtime" }
+ notifications = { path = "crates/notifications" }
++oauth_callback_server = { path = "crates/oauth_callback_server" }
+ ollama = { path = "crates/ollama" }
+ onboarding = { path = "crates/onboarding" }
+ opencode = { path = "crates/opencode" }
+diff --git a/crates/agent_ui/src/agent_panel.rs b/crates/agent_ui/src/agent_panel.rs
+index 8c89b1acc9..a459d83389 100644
+--- a/crates/agent_ui/src/agent_panel.rs
++++ b/crates/agent_ui/src/agent_panel.rs
+@@ -1229,10 +1229,14 @@ impl AgentPanel {
+         window: &mut Window,
+         cx: &mut Context<Workspace>,
+     ) {
+-        if workspace
+-            .panel::<Self>(cx)
+-            .is_some_and(|panel| panel.read(cx).enabled(cx))
++        if let Some(panel) = workspace.panel::<Self>(cx)
++            && panel.read(cx).enabled(cx)
+         {
++            panel.update(cx, |panel, cx| {
++                if matches!(panel.base_view, BaseView::Uninitialized) {
++                    panel.new_agent_thread(Agent::NativeAgent, window, cx);
++                }
++            });
+             workspace.toggle_panel_focus::<Self>(window, cx);
+         }
+     }
+@@ -1243,10 +1247,14 @@ impl AgentPanel {
+         window: &mut Window,
+         cx: &mut Context<Workspace>,
+     ) {
+-        if workspace
+-            .panel::<Self>(cx)
+-            .is_some_and(|panel| panel.read(cx).enabled(cx))
++        if let Some(panel) = workspace.panel::<Self>(cx)
++            && panel.read(cx).enabled(cx)
+         {
++            panel.update(cx, |panel, cx| {
++                if matches!(panel.base_view, BaseView::Uninitialized) {
++                    panel.new_agent_thread(Agent::NativeAgent, window, cx);
++                }
++            });
+             workspace.focus_panel::<Self>(window, cx);
+         }
+     }
+@@ -1257,10 +1265,14 @@ impl AgentPanel {
+         window: &mut Window,
+         cx: &mut Context<Workspace>,
+     ) {
+-        if workspace
+-            .panel::<Self>(cx)
+-            .is_some_and(|panel| panel.read(cx).enabled(cx))
++        if let Some(panel) = workspace.panel::<Self>(cx)
++            && panel.read(cx).enabled(cx)
+         {
++            panel.update(cx, |panel, cx| {
++                if matches!(panel.base_view, BaseView::Uninitialized) {
++                    panel.new_agent_thread(Agent::NativeAgent, window, cx);
++                }
++            });
+             if !workspace.toggle_panel_focus::<Self>(window, cx) {
+                 workspace.close_panel::<Self>(window, cx);
+             }
+diff --git a/crates/agent_ui/src/conversation_view/thread_view.rs b/crates/agent_ui/src/conversation_view/thread_view.rs
+index bd0cfb13ac..9b97ece5a3 100644
+--- a/crates/agent_ui/src/conversation_view/thread_view.rs
++++ b/crates/agent_ui/src/conversation_view/thread_view.rs
+@@ -3720,12 +3720,12 @@ impl ThreadView {
+     }
+ 
+     fn fast_mode_available(&self, cx: &Context<Self>) -> bool {
+-        if !cx.is_staff() {
+-            return false;
+-        }
+         self.as_native_thread(cx)
+             .and_then(|thread| thread.read(cx).model())
+-            .map(|model| model.supports_fast_mode())
++            .map(|model| {
++                model.supports_fast_mode()
++                    && (cx.is_staff() || model.provider_id().0.as_str() == "openai-subscribed")
++            })
+             .unwrap_or(false)
+     }
+ 
+diff --git a/crates/language_model_core/src/language_model_core.rs b/crates/language_model_core/src/language_model_core.rs
+index 5f93269086..c7b29937b9 100644
+--- a/crates/language_model_core/src/language_model_core.rs
++++ b/crates/language_model_core/src/language_model_core.rs
+@@ -473,6 +473,8 @@ pub enum ReasoningEffort {
+     Medium,
+     High,
+     XHigh,
++    Max,
++    Ultra,
+ }
+ 
+ #[cfg(test)]
+diff --git a/crates/language_models/Cargo.toml b/crates/language_models/Cargo.toml
+index 6067011452..a6d68b2316 100644
+--- a/crates/language_models/Cargo.toml
++++ b/crates/language_models/Cargo.toml
+@@ -46,17 +46,21 @@ lmstudio = { workspace = true, features = ["schemars"] }
+ log.workspace = true
+ menu.workspace = true
+ mistral = { workspace = true, features = ["schemars"] }
++oauth_callback_server.workspace = true
+ ollama = { workspace = true, features = ["schemars"] }
+ open_ai = { workspace = true, features = ["schemars"] }
+ opencode = { workspace = true, features = ["schemars"] }
+ open_router = { workspace = true, features = ["schemars"] }
++rand.workspace = true
+ release_channel.workspace = true
+ schemars.workspace = true
++sha2.workspace = true
+ serde.workspace = true
+ serde_json.workspace = true
+ settings.workspace = true
+ smol.workspace = true
+ strum.workspace = true
++url.workspace = true
+ tiktoken-rs.workspace = true
+ tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
+ ui.workspace = true
+diff --git a/crates/language_models/src/language_models.rs b/crates/language_models/src/language_models.rs
+index 3154db91a4..a572e4e5dc 100644
+--- a/crates/language_models/src/language_models.rs
++++ b/crates/language_models/src/language_models.rs
+@@ -25,6 +25,7 @@ use crate::provider::ollama::OllamaLanguageModelProvider;
+ use crate::provider::open_ai::OpenAiLanguageModelProvider;
+ use crate::provider::open_ai_compatible::OpenAiCompatibleLanguageModelProvider;
+ use crate::provider::open_router::OpenRouterLanguageModelProvider;
++use crate::provider::openai_subscribed::OpenAiSubscribedProvider;
+ use crate::provider::opencode::OpenCodeLanguageModelProvider;
+ use crate::provider::vercel::VercelLanguageModelProvider;
+ use crate::provider::vercel_ai_gateway::VercelAiGatewayLanguageModelProvider;
+@@ -286,10 +287,18 @@ fn register_language_model_providers(
+     registry.register_provider(
+         Arc::new(OpenCodeLanguageModelProvider::new(
+             client.http_client(),
+-            credentials_provider,
++            credentials_provider.clone(),
+             cx,
+         )),
+         cx,
+     );
+     registry.register_provider(Arc::new(CopilotChatLanguageModelProvider::new(cx)), cx);
++    registry.register_provider(
++        Arc::new(OpenAiSubscribedProvider::new(
++            client.http_client(),
++            credentials_provider,
++            cx,
++        )),
++        cx,
++    );
+ }
+diff --git a/crates/language_models/src/provider.rs b/crates/language_models/src/provider.rs
+index 35a1e90e44..8b37975f6c 100644
+--- a/crates/language_models/src/provider.rs
++++ b/crates/language_models/src/provider.rs
+@@ -10,6 +10,7 @@ pub mod ollama;
+ pub mod open_ai;
+ pub mod open_ai_compatible;
+ pub mod open_router;
++pub mod openai_subscribed;
+ pub mod opencode;
+ 
+ pub mod vercel;
+diff --git a/crates/language_models/src/provider/openai_subscribed.rs b/crates/language_models/src/provider/openai_subscribed.rs
+new file mode 100644
+index 0000000000..ffbd307306
+--- /dev/null
++++ b/crates/language_models/src/provider/openai_subscribed.rs
+@@ -0,0 +1,1799 @@
++use anyhow::{Context as _, Result, anyhow};
++use base64::Engine as _;
++use base64::engine::general_purpose::URL_SAFE_NO_PAD;
++use credentials_provider::CredentialsProvider;
++use futures::{FutureExt, StreamExt, future::BoxFuture, future::Shared};
++use gpui::{AnyView, App, AsyncApp, ClipboardItem, Context, Entity, SharedString, Task, Window};
++use http_client::{AsyncBody, HttpClient, Method, Request as HttpRequest};
++use language_model::{
++    AuthenticateError, IconOrSvg, LanguageModel, LanguageModelCompletionError,
++    LanguageModelCompletionEvent, LanguageModelId, LanguageModelName, LanguageModelProvider,
++    LanguageModelProviderId, LanguageModelProviderName, LanguageModelProviderState,
++    LanguageModelEffortLevel, LanguageModelRequest, LanguageModelToolChoice, RateLimiter, Speed,
++};
++use open_ai::{ReasoningEffort, responses::stream_response_with_headers as stream_response};
++use rand::RngCore as _;
++use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
++use std::sync::Arc;
++use std::time::{SystemTime, UNIX_EPOCH};
++#[cfg(target_os = "ios")]
++use std::time::Duration;
++use ui::{ConfiguredApiCard, prelude::*};
++use url::form_urlencoded;
++use util::ResultExt as _;
++
++use crate::provider::open_ai::{OpenAiResponseEventMapper, into_open_ai_response};
++
++const PROVIDER_ID: LanguageModelProviderId = LanguageModelProviderId::new("openai-subscribed");
++const PROVIDER_NAME: LanguageModelProviderName =
++    LanguageModelProviderName::new("ChatGPT Subscription");
++
++const CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
++const OPENAI_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
++const OPENAI_AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
++const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
++
++const CREDENTIALS_KEY: &str = "https://chatgpt.com/backend-api/codex";
++const TOKEN_REFRESH_BUFFER_MS: u64 = 5 * 60 * 1000;
++
++#[derive(Serialize, Deserialize, Clone, Debug)]
++struct CodexCredentials {
++    access_token: String,
++    refresh_token: String,
++    expires_at_ms: u64,
++    account_id: Option<String>,
++    email: Option<String>,
++}
++
++impl CodexCredentials {
++    fn is_expired(&self) -> bool {
++        let now = now_ms();
++        now + TOKEN_REFRESH_BUFFER_MS >= self.expires_at_ms
++    }
++}
++
++pub struct State {
++    credentials: Option<CodexCredentials>,
++    sign_in_task: Option<Task<Result<()>>>,
++    refresh_task: Option<Shared<Task<Result<CodexCredentials, Arc<anyhow::Error>>>>>,
++    load_task: Option<Shared<Task<Result<(), Arc<anyhow::Error>>>>>,
++    credentials_provider: Arc<dyn CredentialsProvider>,
++    auth_generation: u64,
++    last_auth_error: Option<SharedString>,
++    available_models: Vec<ChatGptModel>,
++    #[cfg(target_os = "ios")]
++    device_code: Option<String>,
++}
++
++#[derive(Debug)]
++enum RefreshError {
++    Fatal(anyhow::Error),
++    Transient(anyhow::Error),
++}
++
++impl std::fmt::Display for RefreshError {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        match self {
++            RefreshError::Fatal(e) => write!(f, "{e}"),
++            RefreshError::Transient(e) => write!(f, "{e}"),
++        }
++    }
++}
++
++impl State {
++    fn is_authenticated(&self) -> bool {
++        self.credentials.is_some()
++    }
++
++    fn email(&self) -> Option<&str> {
++        self.credentials.as_ref().and_then(|c| c.email.as_deref())
++    }
++
++    fn is_signing_in(&self) -> bool {
++        self.sign_in_task.is_some()
++    }
++}
++
++pub struct OpenAiSubscribedProvider {
++    http_client: Arc<dyn HttpClient>,
++    state: Entity<State>,
++}
++
++impl OpenAiSubscribedProvider {
++    pub fn new(
++        http_client: Arc<dyn HttpClient>,
++        credentials_provider: Arc<dyn CredentialsProvider>,
++        cx: &mut App,
++    ) -> Self {
++        let state = cx.new(|_cx| State {
++            credentials: None,
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider,
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let provider = Self { http_client, state };
++
++        provider.load_credentials(cx);
++
++        provider
++    }
++
++    fn load_credentials(&self, cx: &mut App) {
++        let state = self.state.downgrade();
++        let http_client = self.http_client.clone();
++        let load_task = cx
++            .spawn(async move |cx| {
++                let credentials_provider =
++                    state.read_with(&*cx, |s, _| s.credentials_provider.clone())?;
++                let result = credentials_provider
++                    .read_credentials(CREDENTIALS_KEY, &*cx)
++                    .await;
++                state.update(cx, |s, cx| {
++                    if let Ok(Some((_, bytes))) = result {
++                        match serde_json::from_slice::<CodexCredentials>(&bytes) {
++                            Ok(creds) => s.credentials = Some(creds),
++                            Err(err) => {
++                                log::warn!(
++                                    "Failed to deserialize ChatGPT subscription credentials: {err}"
++                                );
++                            }
++                        }
++                    }
++                    s.load_task = None;
++                    cx.notify();
++                })?;
++                if state.read_with(&*cx, |state, _| state.credentials.is_some())? {
++                    cx.update(|cx| refresh_model_catalog(state.clone(), http_client, cx));
++                }
++                Ok::<(), Arc<anyhow::Error>>(())
++            })
++            .shared();
++
++        self.state.update(cx, |s, _| {
++            s.load_task = Some(load_task);
++        });
++    }
++
++    fn sign_out(&self, cx: &mut App) -> Task<Result<()>> {
++        do_sign_out(&self.state.downgrade(), cx)
++    }
++
++    fn create_language_model(&self, model: ChatGptModel) -> Arc<dyn LanguageModel> {
++        Arc::new(OpenAiSubscribedLanguageModel {
++            id: LanguageModelId::from(model.id().to_string()),
++            model,
++            state: self.state.clone(),
++            http_client: self.http_client.clone(),
++            request_limiter: RateLimiter::new(4),
++        })
++    }
++}
++
++impl LanguageModelProviderState for OpenAiSubscribedProvider {
++    type ObservableEntity = State;
++
++    fn observable_entity(&self) -> Option<Entity<Self::ObservableEntity>> {
++        Some(self.state.clone())
++    }
++}
++
++impl LanguageModelProvider for OpenAiSubscribedProvider {
++    fn id(&self) -> LanguageModelProviderId {
++        PROVIDER_ID
++    }
++
++    fn name(&self) -> LanguageModelProviderName {
++        PROVIDER_NAME
++    }
++
++    fn icon(&self) -> IconOrSvg {
++        IconOrSvg::Icon(IconName::AiOpenAi)
++    }
++
++    fn default_model(&self, cx: &App) -> Option<Arc<dyn LanguageModel>> {
++        self.state.read(cx).available_models.first().cloned()
++            .map(|model| self.create_language_model(model))
++    }
++
++    fn default_fast_model(&self, cx: &App) -> Option<Arc<dyn LanguageModel>> {
++        let state = self.state.read(cx);
++        state.available_models.iter()
++            .find(|model| model.id() == "gpt-5.6-luna")
++            .or_else(|| state.available_models.iter().find(|model| model.id() == "gpt-5.4-mini"))
++            .cloned()
++            .map(|model| self.create_language_model(model))
++    }
++
++    fn provided_models(&self, cx: &App) -> Vec<Arc<dyn LanguageModel>> {
++        self.state.read(cx).available_models.clone()
++            .into_iter()
++            .map(|m| self.create_language_model(m))
++            .collect()
++    }
++
++    fn is_authenticated(&self, cx: &App) -> bool {
++        self.state.read(cx).is_authenticated()
++    }
++
++    fn authenticate(&self, cx: &mut App) -> Task<Result<(), AuthenticateError>> {
++        if self.is_authenticated(cx) {
++            return Task::ready(Ok(()));
++        }
++        let load_task = self.state.read(cx).load_task.clone();
++        if let Some(load_task) = load_task {
++            let weak_state = self.state.downgrade();
++            cx.spawn(async move |cx| {
++                let _ = load_task.await;
++                let is_auth = weak_state
++                    .read_with(&*cx, |s, _| s.is_authenticated())
++                    .unwrap_or(false);
++                if is_auth {
++                    Ok(())
++                } else {
++                    Err(anyhow!(
++                        "Sign in with your ChatGPT Plus or Pro subscription to use this provider."
++                    )
++                    .into())
++                }
++            })
++        } else {
++            Task::ready(Err(anyhow!(
++                "Sign in with your ChatGPT Plus or Pro subscription to use this provider."
++            )
++            .into()))
++        }
++    }
++
++    fn configuration_view(
++        &self,
++        _target_agent: language_model::ConfigurationViewTargetAgent,
++        _window: &mut Window,
++        cx: &mut App,
++    ) -> AnyView {
++        let state = self.state.clone();
++        let http_client = self.http_client.clone();
++        cx.new(|_cx| ConfigurationView { state, http_client })
++            .into()
++    }
++
++    fn reset_credentials(&self, cx: &mut App) -> Task<Result<()>> {
++        self.sign_out(cx)
++    }
++}
++
++//
++// The static entries keep the provider usable while the account's current model
++// catalog loads from the Codex backend.
++#[derive(Clone, Debug, PartialEq)]
++enum ChatGptModel {
++    Gpt55,
++    Gpt54,
++    Gpt54Mini,
++    Gpt53Codex,
++    Gpt52,
++    Discovered(Box<DiscoveredChatGptModel>),
++}
++
++#[derive(Clone, Debug, PartialEq)]
++struct DiscoveredChatGptModel {
++    id: String,
++    display_name: String,
++    max_token_count: u64,
++    supports_images: bool,
++    reasoning_effort: Option<ReasoningEffort>,
++    supported_effort_levels: Vec<ReasoningEffort>,
++    fast_service_tier: Option<String>,
++}
++
++impl ChatGptModel {
++    fn all() -> Vec<Self> {
++        vec![
++            Self::Gpt55,
++            Self::Gpt54,
++            Self::Gpt54Mini,
++            Self::Gpt53Codex,
++            Self::Gpt52,
++        ]
++    }
++
++    fn id(&self) -> &str {
++        match self {
++            Self::Gpt55 => "gpt-5.5",
++            Self::Gpt54 => "gpt-5.4",
++            Self::Gpt54Mini => "gpt-5.4-mini",
++            Self::Gpt53Codex => "gpt-5.3-codex",
++            Self::Gpt52 => "gpt-5.2",
++            Self::Discovered(model) => &model.id,
++        }
++    }
++
++    fn display_name(&self) -> &str {
++        match self {
++            Self::Gpt55 => "GPT-5.5",
++            Self::Gpt54 => "GPT-5.4",
++            Self::Gpt54Mini => "GPT-5.4 Mini",
++            Self::Gpt53Codex => "GPT-5.3 Codex",
++            Self::Gpt52 => "GPT-5.2",
++            Self::Discovered(model) => &model.display_name,
++        }
++    }
++
++    fn max_token_count(&self) -> u64 {
++        // All Codex-supported models share the backend's 272K input cap, even
++        // when the raw model exposes a larger context window via the public
++        // API (e.g. gpt-5.4 has max_context_window 1M, but the Codex backend
++        // caps it at 272K). Source: openai/codex models-manager/models.json.
++        match self {
++            Self::Discovered(model) => model.max_token_count,
++            _ => 272_000,
++        }
++    }
++
++    fn max_output_tokens(&self) -> Option<u64> {
++        Some(128_000)
++    }
++
++    fn supports_images(&self) -> bool {
++        match self {
++            Self::Discovered(model) => model.supports_images,
++            _ => true,
++        }
++    }
++
++    fn reasoning_effort(&self) -> Option<ReasoningEffort> {
++        // Codex bundled models all default to Medium reasoning effort.
++        match self {
++            Self::Discovered(model) => model.reasoning_effort,
++            _ => Some(ReasoningEffort::Medium),
++        }
++    }
++
++    fn supported_effort_levels(&self) -> Vec<ReasoningEffort> {
++        match self {
++            Self::Discovered(model) => model.supported_effort_levels.clone(),
++            _ => vec![
++                ReasoningEffort::Low,
++                ReasoningEffort::Medium,
++                ReasoningEffort::High,
++                ReasoningEffort::XHigh,
++            ],
++        }
++    }
++
++    fn fast_service_tier(&self) -> Option<&str> {
++        match self {
++            Self::Discovered(model) => model.fast_service_tier.as_deref(),
++            _ => None,
++        }
++    }
++
++    fn supports_none_reasoning_effort(&self) -> bool {
++        // The Codex backend's supported_reasoning_levels for every model in
++        // this list is low/medium/high/xhigh -- sending `none` is rejected.
++        false
++    }
++
++    fn supports_parallel_tool_calls(&self) -> bool {
++        true
++    }
++
++    fn supports_prompt_cache_key(&self) -> bool {
++        true
++    }
++}
++
++#[derive(Deserialize)]
++struct ModelsResponse {
++    models: Vec<CatalogModel>,
++}
++
++#[derive(Deserialize)]
++struct CatalogModel {
++    slug: String,
++    display_name: String,
++    #[serde(default)]
++    visibility: String,
++    #[serde(default)]
++    priority: i32,
++    default_reasoning_level: Option<String>,
++    #[serde(default)]
++    supported_reasoning_levels: Vec<CatalogReasoningLevel>,
++    #[serde(default)]
++    service_tiers: Vec<CatalogServiceTier>,
++    context_window: Option<u64>,
++    max_context_window: Option<u64>,
++    input_modalities: Option<Vec<String>>,
++}
++
++#[derive(Deserialize)]
++struct CatalogReasoningLevel {
++    effort: String,
++}
++
++#[derive(Deserialize)]
++struct CatalogServiceTier {
++    id: String,
++    name: String,
++}
++
++fn parse_reasoning_effort(value: &str) -> Option<ReasoningEffort> {
++    value.parse().ok()
++}
++
++async fn list_models(
++    http_client: &dyn HttpClient,
++    credentials: &CodexCredentials,
++) -> Result<Vec<ChatGptModel>> {
++    let mut request = HttpRequest::builder()
++        .method(Method::GET)
++        .uri(format!("{CODEX_BASE_URL}/models?client_version=0.999.0"))
++        .header("Accept", "application/json")
++        .header("Authorization", format!("Bearer {}", credentials.access_token))
++        .header("originator", "zed")
++        .header("OpenAI-Beta", "responses=experimental");
++    if let Some(account_id) = credentials.account_id.as_ref() {
++        request = request.header("ChatGPT-Account-Id", account_id);
++    }
++    let mut response = http_client.send(request.body(AsyncBody::default())?).await?;
++    if !response.status().is_success() {
++        return Err(anyhow!("ChatGPT model catalog returned HTTP {}", response.status()));
++    }
++    let mut body = String::new();
++    smol::io::AsyncReadExt::read_to_string(response.body_mut(), &mut body).await?;
++    let mut models = serde_json::from_str::<ModelsResponse>(&body)?.models;
++    models.retain(|model| model.visibility == "list");
++    models.sort_by_key(|model| model.priority);
++    let models = models.into_iter().map(|model| {
++        let supported_effort_levels = model.supported_reasoning_levels.iter()
++            .filter_map(|level| parse_reasoning_effort(&level.effort))
++            .collect::<Vec<_>>();
++        let reasoning_effort = model.default_reasoning_level.as_deref()
++            .and_then(parse_reasoning_effort)
++            .filter(|effort| supported_effort_levels.is_empty() || supported_effort_levels.contains(effort))
++            .or_else(|| supported_effort_levels.first().copied());
++        ChatGptModel::Discovered(Box::new(DiscoveredChatGptModel {
++            id: model.slug,
++            display_name: model.display_name,
++            max_token_count: model.context_window.or(model.max_context_window).unwrap_or(272_000),
++            supports_images: model.input_modalities.as_ref()
++                .is_none_or(|modalities| modalities.iter().any(|modality| modality == "image")),
++            reasoning_effort,
++            supported_effort_levels,
++            fast_service_tier: model.service_tiers.iter()
++                .find(|tier| tier.name.eq_ignore_ascii_case("fast"))
++                .map(|tier| tier.id.clone()),
++        }))
++    }).collect::<Vec<_>>();
++    if models.is_empty() {
++        return Err(anyhow!("ChatGPT returned an empty model catalog"));
++    }
++    Ok(models)
++}
++
++fn refresh_model_catalog(
++    state: gpui::WeakEntity<State>,
++    http_client: Arc<dyn HttpClient>,
++    cx: &mut App,
++) {
++    cx.spawn(async move |cx| {
++        let credentials = get_fresh_credentials(&state, &http_client, cx)
++            .await
++            .map_err(|error| anyhow!("{error}"))?;
++        let models = list_models(http_client.as_ref(), &credentials).await?;
++        state.update(cx, |state, cx| {
++            state.available_models = models;
++            cx.notify();
++        })?;
++        anyhow::Ok(())
++    }).detach_and_log_err(cx);
++}
++
++struct OpenAiSubscribedLanguageModel {
++    id: LanguageModelId,
++    model: ChatGptModel,
++    state: Entity<State>,
++    http_client: Arc<dyn HttpClient>,
++    request_limiter: RateLimiter,
++}
++
++impl LanguageModel for OpenAiSubscribedLanguageModel {
++    fn id(&self) -> LanguageModelId {
++        self.id.clone()
++    }
++
++    fn name(&self) -> LanguageModelName {
++        LanguageModelName::from(self.model.display_name().to_string())
++    }
++
++    fn provider_id(&self) -> LanguageModelProviderId {
++        PROVIDER_ID
++    }
++
++    fn provider_name(&self) -> LanguageModelProviderName {
++        PROVIDER_NAME
++    }
++
++    fn supports_tools(&self) -> bool {
++        true
++    }
++
++    fn supports_images(&self) -> bool {
++        self.model.supports_images()
++    }
++
++    fn supports_tool_choice(&self, _choice: LanguageModelToolChoice) -> bool {
++        true
++    }
++
++    fn supports_streaming_tools(&self) -> bool {
++        true
++    }
++
++    fn supports_thinking(&self) -> bool {
++        self.model.reasoning_effort().is_some()
++    }
++
++    fn supported_effort_levels(&self) -> Vec<LanguageModelEffortLevel> {
++        let default = self.model.reasoning_effort();
++        self.model.supported_effort_levels().into_iter().map(|effort| {
++            let value = match effort {
++                ReasoningEffort::Minimal => "minimal",
++                ReasoningEffort::Low => "low",
++                ReasoningEffort::Medium => "medium",
++                ReasoningEffort::High => "high",
++                ReasoningEffort::XHigh => "xhigh",
++                ReasoningEffort::Max => "max",
++                ReasoningEffort::Ultra => "ultra",
++            };
++            let name = match effort {
++                ReasoningEffort::Minimal => "Minimal",
++                ReasoningEffort::Low => "Low",
++                ReasoningEffort::Medium => "Medium",
++                ReasoningEffort::High => "High",
++                ReasoningEffort::XHigh => "Extra High",
++                ReasoningEffort::Max => "Max",
++                ReasoningEffort::Ultra => "Ultra",
++            };
++            LanguageModelEffortLevel {
++                name: name.into(),
++                value: value.into(),
++                is_default: Some(effort) == default,
++            }
++        }).collect()
++    }
++
++    fn supports_fast_mode(&self) -> bool {
++        self.model.fast_service_tier().is_some()
++    }
++
++    fn telemetry_id(&self) -> String {
++        format!("openai-subscribed/{}", self.model.id())
++    }
++
++    fn max_token_count(&self) -> u64 {
++        self.model.max_token_count()
++    }
++
++    fn max_output_tokens(&self) -> Option<u64> {
++        self.model.max_output_tokens()
++    }
++
++    fn count_tokens(&self, request: LanguageModelRequest, cx: &App) -> BoxFuture<'static, Result<u64>> {
++        cx.background_spawn(async move { open_ai::completion::count_open_ai_tokens(request, open_ai::Model::FivePointFour) }).boxed()
++    }
++
++    fn stream_completion(
++        &self,
++        request: LanguageModelRequest,
++        cx: &AsyncApp,
++    ) -> BoxFuture<
++        'static,
++        Result<
++            futures::stream::BoxStream<
++                'static,
++                Result<LanguageModelCompletionEvent, LanguageModelCompletionError>,
++            >,
++            LanguageModelCompletionError,
++        >,
++    > {
++        // The Codex backend rejects `max_output_tokens` (`Unsupported parameter`),
++        // unlike the public OpenAI Responses API. Pass `None` so the field is
++        // omitted from the serialized request body entirely.
++        let selected_effort = request.thinking_effort.as_deref()
++            .and_then(parse_reasoning_effort)
++            .filter(|effort| self.model.supported_effort_levels().contains(effort))
++            .or_else(|| self.model.reasoning_effort());
++        let fast_service_tier = if request.speed == Some(Speed::Fast) {
++            self.model.fast_service_tier().map(str::to_owned)
++        } else {
++            None
++        };
++        let mut responses_request = into_open_ai_response(
++            request,
++            self.model.id(),
++            self.model.supports_parallel_tool_calls(),
++            self.model.supports_prompt_cache_key(),
++            /*max_output_tokens*/ None,
++            selected_effort,
++        );
++        responses_request.store = Some(false);
++        responses_request.service_tier = fast_service_tier;
++
++        // The Codex backend requires system messages to be in the top-level
++        // `instructions` field rather than as input items.
++        let mut instructions = Vec::new();
++        responses_request.input.retain(|item| {
++            if let open_ai::responses::ResponseInputItem::Message(msg) = item {
++                if msg.role == open_ai::Role::System {
++                    for part in &msg.content {
++                        if let open_ai::responses::ResponseInputContent::Text { text } = part {
++                            instructions.push(text.clone());
++                        }
++                    }
++                    return false;
++                }
++            }
++            true
++        });
++        if !instructions.is_empty() {
++            responses_request.instructions = Some(instructions.join("\n\n"));
++        }
++
++        let state = self.state.downgrade();
++        let http_client = self.http_client.clone();
++        let request_limiter = self.request_limiter.clone();
++
++        let future = cx.spawn(async move |cx| {
++            let creds = get_fresh_credentials(&state, &http_client, cx).await?;
++
++            let mut extra_headers: Vec<(String, String)> = vec![
++                ("originator".into(), "zed".into()),
++                ("OpenAI-Beta".into(), "responses=experimental".into()),
++            ];
++            if let Some(ref id) = creds.account_id {
++                if !id.is_empty() {
++                    extra_headers.push(("ChatGPT-Account-Id".into(), id.clone()));
++                }
++            }
++
++            let access_token = creds.access_token.clone();
++            request_limiter
++                .stream(async move {
++                    stream_response(
++                        http_client.as_ref(),
++                        PROVIDER_NAME.0.as_str(),
++                        CODEX_BASE_URL,
++                        &access_token,
++                        responses_request,
++                        extra_headers,
++                    )
++                    .await
++                    .map_err(LanguageModelCompletionError::from)
++                })
++                .await
++        });
++
++        async move {
++            let mapper = OpenAiResponseEventMapper::new();
++            Ok(mapper.map_stream(future.await?.boxed()).boxed())
++        }
++        .boxed()
++    }
++}
++
++async fn get_fresh_credentials(
++    state: &gpui::WeakEntity<State>,
++    http_client: &Arc<dyn HttpClient>,
++    cx: &mut AsyncApp,
++) -> Result<CodexCredentials, LanguageModelCompletionError> {
++    let (creds, existing_task) = state
++        .read_with(&*cx, |s, _| (s.credentials.clone(), s.refresh_task.clone()))
++        .map_err(LanguageModelCompletionError::Other)?;
++
++    let creds = creds.ok_or(LanguageModelCompletionError::NoApiKey {
++        provider: PROVIDER_NAME,
++    })?;
++
++    if !creds.is_expired() {
++        return Ok(creds);
++    }
++
++    // If another caller is already refreshing, await their result.
++    if let Some(shared_task) = existing_task {
++        return shared_task
++            .await
++            .map_err(|e| LanguageModelCompletionError::Other(anyhow::anyhow!("{e}")));
++    }
++
++    // We are the first caller to notice expiry — spawn the refresh task.
++    let http_client_clone = http_client.clone();
++    let state_clone = state.clone();
++    let refresh_token_value = creds.refresh_token.clone();
++
++    // Capture the generation so we can detect sign-outs that happened during refresh.
++    let generation = state
++        .read_with(&*cx, |s, _| s.auth_generation)
++        .map_err(LanguageModelCompletionError::Other)?;
++
++    let shared_task = cx
++        .spawn(async move |cx| {
++            let result = refresh_token(&http_client_clone, &refresh_token_value).await;
++
++            match result {
++                Ok(refreshed) => {
++                    let persist_result: Result<CodexCredentials, Arc<anyhow::Error>> = async {
++                        // Check if auth_generation changed (sign-out during refresh).
++                        let current_generation = state_clone
++                            .read_with(&*cx, |s, _| s.auth_generation)
++                            .map_err(|e| Arc::new(e))?;
++                        if current_generation != generation {
++                            return Err(Arc::new(anyhow!(
++                                "Sign-out occurred during token refresh"
++                            )));
++                        }
++
++                        let credentials_provider = state_clone
++                            .read_with(&*cx, |s, _| s.credentials_provider.clone())
++                            .map_err(|e| Arc::new(e))?;
++
++                        let json =
++                            serde_json::to_vec(&refreshed).map_err(|e| Arc::new(e.into()))?;
++
++                        credentials_provider
++                            .write_credentials(CREDENTIALS_KEY, "Bearer", &json, &*cx)
++                            .await
++                            .map_err(|e| Arc::new(e))?;
++
++                        state_clone
++                            .update(cx, |s, _| {
++                                s.credentials = Some(refreshed.clone());
++                                s.refresh_task = None;
++                            })
++                            .map_err(|e| Arc::new(e))?;
++
++                        Ok(refreshed)
++                    }
++                    .await;
++
++                    // Clear refresh_task on failure too.
++                    if persist_result.is_err() {
++                        let _ = state_clone.update(cx, |s, _| {
++                            s.refresh_task = None;
++                        });
++                    }
++
++                    persist_result
++                }
++                Err(RefreshError::Fatal(e)) => {
++                    log::error!("ChatGPT subscription token refresh failed fatally: {e:?}");
++                    let _ = state_clone.update(cx, |s, cx| {
++                        s.refresh_task = None;
++                        s.credentials = None;
++                        s.last_auth_error =
++                            Some("Your session has expired. Please sign in again.".into());
++                        cx.notify();
++                    });
++                    // Also clear the keychain so stale credentials aren't loaded next time.
++                    if let Ok(credentials_provider) =
++                        state_clone.read_with(&*cx, |s, _| s.credentials_provider.clone())
++                    {
++                        credentials_provider
++                            .delete_credentials(CREDENTIALS_KEY, &*cx)
++                            .await
++                            .log_err();
++                    }
++                    Err(Arc::new(e))
++                }
++                Err(RefreshError::Transient(e)) => {
++                    log::warn!("ChatGPT subscription token refresh failed transiently: {e:?}");
++                    let _ = state_clone.update(cx, |s, _| {
++                        s.refresh_task = None;
++                    });
++                    Err(Arc::new(e))
++                }
++            }
++        })
++        .shared();
++
++    // Store the shared task so concurrent callers can join on it.
++    state
++        .update(cx, |s, _| {
++            s.refresh_task = Some(shared_task.clone());
++        })
++        .map_err(LanguageModelCompletionError::Other)?;
++
++    shared_task
++        .await
++        .map_err(|e| LanguageModelCompletionError::Other(anyhow::anyhow!("{e}")))
++}
++
++#[derive(Deserialize)]
++struct TokenResponse {
++    access_token: String,
++    refresh_token: String,
++    #[serde(default)]
++    id_token: Option<String>,
++    expires_in: u64,
++    #[serde(default)]
++    email: Option<String>,
++}
++
++// The OAuth client registered for `CLIENT_ID` (the Codex CLI's client) only allows
++// `http://localhost:1455/auth/callback` and `http://localhost:1457/auth/callback`
++// as redirect URIs; using anything else (different host, port, or path) causes
++// auth.openai.com to reject the authorize request with a generic `unknown_error`
++// before redirecting back. Keep these in sync with the Codex CLI's redirect URI
++// allow-list (see codex-rs/login/src/server.rs in openai/codex).
++const CODEX_CALLBACK_HOST: &str = "localhost";
++const CODEX_CALLBACK_PORT: u16 = 1455;
++const CODEX_CALLBACK_FALLBACK_PORT: u16 = 1457;
++const CODEX_CALLBACK_PATH: &str = "/auth/callback";
++
++async fn do_oauth_flow(
++    http_client: Arc<dyn HttpClient>,
++    cx: &AsyncApp,
++) -> Result<CodexCredentials> {
++    // Start the callback server FIRST so the redirect URI is ready
++    let (redirect_uri, callback_rx) =
++        oauth_callback_server::start_oauth_callback_server_with_config(
++            oauth_callback_server::OAuthCallbackServerConfig {
++                host: CODEX_CALLBACK_HOST,
++                preferred_port: CODEX_CALLBACK_PORT,
++                fallback_port: Some(CODEX_CALLBACK_FALLBACK_PORT),
++                path: CODEX_CALLBACK_PATH,
++            },
++        )
++        .context("Failed to start OAuth callback server")?;
++
++    // PKCE verifier: 32 random bytes → base64url (no padding)
++    let mut verifier_bytes = [0u8; 32];
++    rand::rng().fill_bytes(&mut verifier_bytes);
++    let verifier = URL_SAFE_NO_PAD.encode(verifier_bytes);
++
++    // PKCE challenge: SHA-256(verifier) → base64url
++    let mut hasher = Sha256::new();
++    hasher.update(verifier.as_bytes());
++    let challenge = URL_SAFE_NO_PAD.encode(hasher.finalize().as_slice());
++
++    // CSRF state: 16 random bytes → hex string
++    let mut state_bytes = [0u8; 16];
++    rand::rng().fill_bytes(&mut state_bytes);
++    let oauth_state: String = state_bytes.iter().map(|b| format!("{b:02x}")).collect();
++
++    let mut auth_url = url::Url::parse(OPENAI_AUTHORIZE_URL).expect("valid base URL");
++    auth_url
++        .query_pairs_mut()
++        .append_pair("client_id", CLIENT_ID)
++        .append_pair("redirect_uri", &redirect_uri)
++        .append_pair(
++            "scope",
++            "openid profile email offline_access api.connectors.read api.connectors.invoke",
++        )
++        .append_pair("response_type", "code")
++        .append_pair("code_challenge", &challenge)
++        .append_pair("code_challenge_method", "S256")
++        .append_pair("id_token_add_organizations", "true")
++        .append_pair("state", &oauth_state)
++        .append_pair("codex_cli_simplified_flow", "true")
++        .append_pair("originator", "zed");
++
++    // Open browser AFTER the listener is ready
++    cx.update(|cx| cx.open_url(auth_url.as_str()));
++
++    // Await the callback
++    let callback = callback_rx
++        .await
++        .map_err(|_| anyhow!("OAuth callback was cancelled"))?
++        .context("OAuth callback failed")?;
++
++    // Validate CSRF state
++    if callback.state != oauth_state {
++        return Err(anyhow!("OAuth state mismatch"));
++    }
++
++    let tokens = exchange_code(&http_client, &callback.code, &verifier, &redirect_uri)
++        .await
++        .context("Token exchange failed")?;
++
++    let jwt = tokens
++        .id_token
++        .as_deref()
++        .unwrap_or(tokens.access_token.as_str());
++    let claims = extract_jwt_claims(jwt);
++
++    Ok(CodexCredentials {
++        access_token: tokens.access_token,
++        refresh_token: tokens.refresh_token,
++        expires_at_ms: now_ms() + tokens.expires_in * 1000,
++        account_id: claims.account_id,
++        email: claims.email.or(tokens.email),
++    })
++}
++
++#[cfg(target_os = "ios")]
++#[derive(Deserialize)]
++struct DeviceAuthorization {
++    device_auth_id: String,
++    #[serde(alias = "usercode")]
++    user_code: String,
++    #[serde(default)]
++    interval: serde_json::Value,
++}
++
++#[cfg(target_os = "ios")]
++#[derive(Deserialize)]
++struct DeviceAuthorizationResult {
++    authorization_code: String,
++    code_verifier: String,
++}
++
++#[cfg(target_os = "ios")]
++async fn do_device_code_flow(
++    http_client: Arc<dyn HttpClient>,
++    state: gpui::WeakEntity<State>,
++    cx: &mut AsyncApp,
++) -> Result<CodexCredentials> {
++    let request = HttpRequest::builder()
++        .method(Method::POST)
++        .uri("https://auth.openai.com/api/accounts/deviceauth/usercode")
++        .header("Content-Type", "application/json")
++        .body(AsyncBody::from(serde_json::json!({"client_id": CLIENT_ID}).to_string()))?;
++    let mut response = http_client.send(request).await?;
++    if !response.status().is_success() {
++        return Err(anyhow!("Could not start ChatGPT sign-in (HTTP {})", response.status()));
++    }
++    let mut body = String::new();
++    smol::io::AsyncReadExt::read_to_string(response.body_mut(), &mut body).await?;
++    let authorization: DeviceAuthorization = serde_json::from_str(&body)?;
++    let interval = authorization.interval.as_u64()
++        .or_else(|| authorization.interval.as_str().and_then(|value| value.parse().ok()))
++        .unwrap_or(5).max(1);
++    state.update(cx, |state, cx| {
++        state.device_code = Some(authorization.user_code.clone());
++        cx.notify();
++    })?;
++
++    let started = std::time::Instant::now();
++    loop {
++        if started.elapsed() > Duration::from_secs(15 * 60) {
++            return Err(anyhow!("ChatGPT sign-in code expired. Please try again."));
++        }
++        smol::Timer::after(Duration::from_secs(interval)).await;
++        let request = HttpRequest::builder()
++            .method(Method::POST)
++            .uri("https://auth.openai.com/api/accounts/deviceauth/token")
++            .header("Content-Type", "application/json")
++            .body(AsyncBody::from(serde_json::json!({
++                "device_auth_id": authorization.device_auth_id,
++                "user_code": authorization.user_code,
++            }).to_string()))?;
++        let mut response = http_client.send(request).await?;
++        if response.status() == http_client::StatusCode::FORBIDDEN
++            || response.status() == http_client::StatusCode::NOT_FOUND
++        {
++            continue;
++        }
++        if !response.status().is_success() {
++            return Err(anyhow!("ChatGPT sign-in failed (HTTP {})", response.status()));
++        }
++        let mut body = String::new();
++        smol::io::AsyncReadExt::read_to_string(response.body_mut(), &mut body).await?;
++        let result: DeviceAuthorizationResult = serde_json::from_str(&body)?;
++        let tokens = exchange_code(
++            &http_client,
++            &result.authorization_code,
++            &result.code_verifier,
++            "https://auth.openai.com/deviceauth/callback",
++        ).await?;
++        let jwt = tokens.id_token.as_deref().unwrap_or(tokens.access_token.as_str());
++        let claims = extract_jwt_claims(jwt);
++        return Ok(CodexCredentials {
++            access_token: tokens.access_token,
++            refresh_token: tokens.refresh_token,
++            expires_at_ms: now_ms() + tokens.expires_in * 1000,
++            account_id: claims.account_id,
++            email: claims.email.or(tokens.email),
++        });
++    }
++}
++
++async fn exchange_code(
++    client: &Arc<dyn HttpClient>,
++    code: &str,
++    verifier: &str,
++    redirect_uri: &str,
++) -> Result<TokenResponse> {
++    let body = form_urlencoded::Serializer::new(String::new())
++        .append_pair("grant_type", "authorization_code")
++        .append_pair("client_id", CLIENT_ID)
++        .append_pair("code", code)
++        .append_pair("redirect_uri", redirect_uri)
++        .append_pair("code_verifier", verifier)
++        .finish();
++
++    let request = HttpRequest::builder()
++        .method(Method::POST)
++        .uri(OPENAI_TOKEN_URL)
++        .header("Content-Type", "application/x-www-form-urlencoded")
++        .body(AsyncBody::from(body))?;
++
++    let mut response = client.send(request).await?;
++    let mut body = String::new();
++    smol::io::AsyncReadExt::read_to_string(response.body_mut(), &mut body).await?;
++
++    if !response.status().is_success() {
++        return Err(anyhow!(
++            "Token exchange failed (HTTP {}): {body}",
++            response.status()
++        ));
++    }
++
++    serde_json::from_str::<TokenResponse>(&body).context("Failed to parse token response")
++}
++
++async fn refresh_token(
++    client: &Arc<dyn HttpClient>,
++    refresh_token: &str,
++) -> Result<CodexCredentials, RefreshError> {
++    let body = form_urlencoded::Serializer::new(String::new())
++        .append_pair("grant_type", "refresh_token")
++        .append_pair("client_id", CLIENT_ID)
++        .append_pair("refresh_token", refresh_token)
++        .finish();
++
++    let request = HttpRequest::builder()
++        .method(Method::POST)
++        .uri(OPENAI_TOKEN_URL)
++        .header("Content-Type", "application/x-www-form-urlencoded")
++        .body(AsyncBody::from(body))
++        .map_err(|e| RefreshError::Transient(e.into()))?;
++
++    let mut response = client
++        .send(request)
++        .await
++        .map_err(|e| RefreshError::Transient(e))?;
++    let status = response.status();
++    let mut body = String::new();
++    smol::io::AsyncReadExt::read_to_string(response.body_mut(), &mut body)
++        .await
++        .map_err(|e| RefreshError::Transient(e.into()))?;
++
++    if !status.is_success() {
++        let err = anyhow!("Token refresh failed (HTTP {}): {body}", status);
++        // 400/401/403 indicate a revoked or invalid refresh token.
++        // 5xx and other errors are treated as transient.
++        if status == http_client::StatusCode::BAD_REQUEST
++            || status == http_client::StatusCode::UNAUTHORIZED
++            || status == http_client::StatusCode::FORBIDDEN
++        {
++            return Err(RefreshError::Fatal(err));
++        }
++        return Err(RefreshError::Transient(err));
++    }
++
++    let tokens: TokenResponse =
++        serde_json::from_str(&body).map_err(|e| RefreshError::Transient(e.into()))?;
++    let jwt = tokens
++        .id_token
++        .as_deref()
++        .unwrap_or(tokens.access_token.as_str());
++    let claims = extract_jwt_claims(jwt);
++
++    Ok(CodexCredentials {
++        access_token: tokens.access_token,
++        refresh_token: tokens.refresh_token,
++        expires_at_ms: now_ms() + tokens.expires_in * 1000,
++        account_id: claims.account_id,
++        email: claims.email.or(tokens.email),
++    })
++}
++
++struct JwtClaims {
++    account_id: Option<String>,
++    email: Option<String>,
++}
++
++/// Extract claims from a JWT payload (base64url middle segment).
++/// Extracts `chatgpt_account_id` from three possible locations (matching Roo Code's
++/// implementation) and the `email` claim.
++fn extract_jwt_claims(jwt: &str) -> JwtClaims {
++    let Some(payload_b64) = jwt.split('.').nth(1) else {
++        return JwtClaims {
++            account_id: None,
++            email: None,
++        };
++    };
++    let Ok(payload) = URL_SAFE_NO_PAD.decode(payload_b64) else {
++        return JwtClaims {
++            account_id: None,
++            email: None,
++        };
++    };
++    let Ok(claims) = serde_json::from_slice::<serde_json::Value>(&payload) else {
++        return JwtClaims {
++            account_id: None,
++            email: None,
++        };
++    };
++
++    let account_id = claims
++        .get("chatgpt_account_id")
++        .and_then(|v| v.as_str())
++        .or_else(|| {
++            claims
++                .get("https://api.openai.com/auth")
++                .and_then(|v| v.get("chatgpt_account_id"))
++                .and_then(|v| v.as_str())
++        })
++        .or_else(|| {
++            claims
++                .get("organizations")
++                .and_then(|v| v.as_array())
++                .and_then(|arr| arr.first())
++                .and_then(|org| org.get("id"))
++                .and_then(|v| v.as_str())
++        })
++        .map(|s| s.to_owned());
++
++    let email = claims
++        .get("email")
++        .and_then(|v| v.as_str())
++        .map(|s| s.to_owned());
++
++    JwtClaims { account_id, email }
++}
++
++fn now_ms() -> u64 {
++    SystemTime::now()
++        .duration_since(UNIX_EPOCH)
++        .map(|d| d.as_millis() as u64)
++        .unwrap_or_else(|err| {
++            log::error!("System clock is before UNIX epoch: {err}");
++            0
++        })
++}
++
++fn do_sign_in(state: &Entity<State>, http_client: &Arc<dyn HttpClient>, cx: &mut App) {
++    if state.read(cx).is_signing_in() {
++        return;
++    }
++
++    let weak_state = state.downgrade();
++    let http_client = http_client.clone();
++    let catalog_http_client = http_client.clone();
++
++    let task = cx.spawn(async move |cx| {
++        #[cfg(target_os = "ios")]
++        let sign_in_result = do_device_code_flow(http_client, weak_state.clone(), cx).await;
++        #[cfg(not(target_os = "ios"))]
++        let sign_in_result = do_oauth_flow(http_client, &*cx).await;
++        match sign_in_result {
++            Ok(creds) => {
++                let persist_result = async {
++                    let credentials_provider =
++                        weak_state.read_with(&*cx, |s, _| s.credentials_provider.clone())?;
++                    let json = serde_json::to_vec(&creds)?;
++                    credentials_provider
++                        .write_credentials(CREDENTIALS_KEY, "Bearer", &json, &*cx)
++                        .await?;
++                    anyhow::Ok(())
++                }
++                .await;
++
++                match persist_result {
++                    Ok(()) => {
++                        weak_state
++                            .update(cx, |s, cx| {
++                                s.credentials = Some(creds);
++                                s.sign_in_task = None;
++                                s.last_auth_error = None;
++                                #[cfg(target_os = "ios")]
++                                { s.device_code = None; }
++                                cx.notify();
++                            })
++                            .log_err();
++                        cx.update(|cx| refresh_model_catalog(weak_state.clone(), catalog_http_client, cx));
++                    }
++                    Err(err) => {
++                        log::error!(
++                            "ChatGPT subscription sign-in failed to persist credentials: {err:?}"
++                        );
++                        weak_state
++                            .update(cx, |s, cx| {
++                                s.sign_in_task = None;
++                                s.last_auth_error =
++                                    Some("Failed to save credentials. Please try again.".into());
++                                #[cfg(target_os = "ios")]
++                                { s.device_code = None; }
++                                cx.notify();
++                            })
++                            .log_err();
++                    }
++                }
++            }
++            Err(err) => {
++                log::error!("ChatGPT subscription sign-in failed: {err:?}");
++                weak_state
++                    .update(cx, |s, cx| {
++                        s.sign_in_task = None;
++                        s.last_auth_error = Some("Sign-in failed. Please try again.".into());
++                        #[cfg(target_os = "ios")]
++                        { s.device_code = None; }
++                        cx.notify();
++                    })
++                    .log_err();
++            }
++        }
++        anyhow::Ok(())
++    });
++
++    state.update(cx, |s, cx| {
++        s.last_auth_error = None;
++        #[cfg(target_os = "ios")]
++        { s.device_code = None; }
++        s.sign_in_task = Some(task);
++        cx.notify();
++    });
++}
++
++fn do_sign_out(state: &gpui::WeakEntity<State>, cx: &mut App) -> Task<Result<()>> {
++    let weak_state = state.clone();
++    // Clear credentials and cancel in-flight work immediately so the UI
++    // reflects the sign-out right away.
++    weak_state
++        .update(cx, |s, cx| {
++            s.auth_generation += 1;
++            s.credentials = None;
++            s.sign_in_task = None;
++            s.refresh_task = None;
++            s.last_auth_error = None;
++            cx.notify();
++        })
++        .log_err();
++
++    cx.spawn(async move |cx| {
++        let credentials_provider =
++            weak_state.read_with(&*cx, |s, _| s.credentials_provider.clone())?;
++        credentials_provider
++            .delete_credentials(CREDENTIALS_KEY, &*cx)
++            .await
++            .context("Failed to delete ChatGPT subscription credentials from keychain")?;
++        anyhow::Ok(())
++    })
++}
++
++struct ConfigurationView {
++    state: Entity<State>,
++    http_client: Arc<dyn HttpClient>,
++}
++
++impl Render for ConfigurationView {
++    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
++        let state = self.state.read(cx);
++
++        if state.is_authenticated() {
++            let label = state
++                .email()
++                .map(|e| format!("Signed in as {e}"))
++                .unwrap_or_else(|| "Signed in".to_string());
++
++            let weak_state = self.state.downgrade();
++            return v_flex()
++                .child(
++                    ConfiguredApiCard::new(SharedString::from(label))
++                        .button_label("Sign Out")
++                        .on_click(cx.listener(move |_this, _, _window, cx| {
++                            do_sign_out(&weak_state, cx).detach_and_log_err(cx);
++                        })),
++                )
++                .into_any_element();
++        }
++
++        if state.is_signing_in() {
++            #[cfg(target_os = "ios")]
++            if let Some(code) = state.device_code.clone() {
++                let copied_code = code.clone();
++                return v_flex()
++                    .gap_2()
++                    .child(Label::new("Open the ChatGPT sign-in page and enter this code:"))
++                    .child(Label::new(code))
++                    .child(Button::new("copy-chatgpt-device-code", "Copy code")
++                        .on_click(move |_, _window, cx| cx.write_to_clipboard(ClipboardItem::new_string(copied_code.clone()))))
++                    .child(Button::new("open-chatgpt-device-login", "Open ChatGPT sign-in")
++                        .on_click(|_, _window, cx| cx.open_url("https://auth.openai.com/codex/device")))
++                    .child(Label::new("Waiting for sign-in…").color(Color::Muted))
++                    .into_any_element();
++            }
++            return v_flex()
++                .child(Label::new("Signing in…").color(Color::Muted))
++                .into_any_element();
++        }
++
++        let last_auth_error = state.last_auth_error.clone();
++        let provider_state = self.state.clone();
++        let http_client = self.http_client.clone();
++
++        v_flex()
++            .gap_2()
++            .when_some(last_auth_error, |this, error| {
++                this.child(Label::new(error).color(Color::Error))
++            })
++            .child(Label::new(
++                "Sign in with your ChatGPT Plus or Pro subscription to use OpenAI models in Zed's agent.",
++            ))
++            .child(
++                Button::new("sign-in", "Sign in with ChatGPT")
++                    .on_click(move |_, _window, cx| {
++                        do_sign_in(&provider_state, &http_client, cx);
++                    }),
++            )
++            .into_any_element()
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use gpui::TestAppContext;
++    use http_client::FakeHttpClient;
++    use parking_lot::Mutex;
++    use std::future::Future;
++    use std::pin::Pin;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++
++    struct FakeCredentialsProvider {
++        storage: Mutex<Option<(String, Vec<u8>)>>,
++    }
++
++    impl FakeCredentialsProvider {
++        fn new() -> Self {
++            Self {
++                storage: Mutex::new(None),
++            }
++        }
++    }
++
++    impl CredentialsProvider for FakeCredentialsProvider {
++        fn read_credentials<'a>(
++            &'a self,
++            _url: &'a str,
++            _cx: &'a AsyncApp,
++        ) -> Pin<Box<dyn Future<Output = Result<Option<(String, Vec<u8>)>>> + 'a>> {
++            Box::pin(async { Ok(self.storage.lock().clone()) })
++        }
++
++        fn write_credentials<'a>(
++            &'a self,
++            _url: &'a str,
++            username: &'a str,
++            password: &'a [u8],
++            _cx: &'a AsyncApp,
++        ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
++            self.storage
++                .lock()
++                .replace((username.to_string(), password.to_vec()));
++            Box::pin(async { Ok(()) })
++        }
++
++        fn delete_credentials<'a>(
++            &'a self,
++            _url: &'a str,
++            _cx: &'a AsyncApp,
++        ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
++            *self.storage.lock() = None;
++            Box::pin(async { Ok(()) })
++        }
++    }
++
++    fn make_expired_credentials() -> CodexCredentials {
++        CodexCredentials {
++            access_token: "old_access".to_string(),
++            refresh_token: "old_refresh".to_string(),
++            expires_at_ms: 0,
++            account_id: None,
++            email: None,
++        }
++    }
++
++    fn make_fresh_credentials() -> CodexCredentials {
++        CodexCredentials {
++            access_token: "fresh_access".to_string(),
++            refresh_token: "fresh_refresh".to_string(),
++            expires_at_ms: now_ms() + 3_600_000,
++            account_id: None,
++            email: None,
++        }
++    }
++
++    fn fake_token_response() -> String {
++        serde_json::json!({
++            "access_token": "fresh_access",
++            "refresh_token": "fresh_refresh",
++            "expires_in": 3600
++        })
++        .to_string()
++    }
++
++    #[gpui::test]
++    async fn test_concurrent_refresh_deduplicates(cx: &mut TestAppContext) {
++        let refresh_count = Arc::new(AtomicUsize::new(0));
++        let refresh_count_clone = refresh_count.clone();
++
++        let http_client = FakeHttpClient::create(move |_request| {
++            let refresh_count = refresh_count_clone.clone();
++            async move {
++                refresh_count.fetch_add(1, Ordering::SeqCst);
++                let body = fake_token_response();
++                Ok(http_client::Response::builder()
++                    .status(200)
++                    .body(http_client::AsyncBody::from(body))?)
++            }
++        });
++
++        let state = cx.new(|_cx| State {
++            credentials: Some(make_expired_credentials()),
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: Arc::new(FakeCredentialsProvider::new()),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let http: Arc<dyn HttpClient> = http_client;
++
++        // Spawn two concurrent refresh attempts.
++        let weak1 = weak_state.clone();
++        let http1 = http.clone();
++        let task1 =
++            cx.spawn(async move |mut cx| get_fresh_credentials(&weak1, &http1, &mut cx).await);
++
++        let weak2 = weak_state.clone();
++        let http2 = http.clone();
++        let task2 =
++            cx.spawn(async move |mut cx| get_fresh_credentials(&weak2, &http2, &mut cx).await);
++
++        // Drive both to completion.
++        cx.run_until_parked();
++        let result1 = task1.await;
++        let result2 = task2.await;
++
++        assert!(result1.is_ok(), "first refresh should succeed");
++        assert!(result2.is_ok(), "second refresh should succeed");
++        assert_eq!(result1.unwrap().access_token, "fresh_access");
++        assert_eq!(result2.unwrap().access_token, "fresh_access");
++        assert_eq!(
++            refresh_count.load(Ordering::SeqCst),
++            1,
++            "refresh_token should only be called once despite two concurrent callers"
++        );
++    }
++
++    #[gpui::test]
++    async fn test_fresh_credentials_skip_refresh(cx: &mut TestAppContext) {
++        let refresh_count = Arc::new(AtomicUsize::new(0));
++        let refresh_count_clone = refresh_count.clone();
++
++        let http_client = FakeHttpClient::create(move |_request| {
++            let refresh_count = refresh_count_clone.clone();
++            async move {
++                refresh_count.fetch_add(1, Ordering::SeqCst);
++                let body = fake_token_response();
++                Ok(http_client::Response::builder()
++                    .status(200)
++                    .body(http_client::AsyncBody::from(body))?)
++            }
++        });
++
++        let state = cx.new(|_cx| State {
++            credentials: Some(make_fresh_credentials()),
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: Arc::new(FakeCredentialsProvider::new()),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let http: Arc<dyn HttpClient> = http_client;
++
++        let weak = weak_state.clone();
++        let http_clone = http.clone();
++        let result = cx
++            .spawn(async move |mut cx| get_fresh_credentials(&weak, &http_clone, &mut cx).await)
++            .await;
++
++        assert!(result.is_ok());
++        assert_eq!(result.unwrap().access_token, "fresh_access");
++        assert_eq!(
++            refresh_count.load(Ordering::SeqCst),
++            0,
++            "no refresh should happen when credentials are fresh"
++        );
++    }
++
++    #[gpui::test]
++    async fn test_no_credentials_returns_no_api_key(cx: &mut TestAppContext) {
++        let http_client = FakeHttpClient::create(|_| async {
++            Ok(http_client::Response::builder()
++                .status(200)
++                .body(http_client::AsyncBody::default())?)
++        });
++
++        let state = cx.new(|_cx| State {
++            credentials: None,
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: Arc::new(FakeCredentialsProvider::new()),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let http: Arc<dyn HttpClient> = http_client;
++
++        let weak = weak_state.clone();
++        let http_clone = http.clone();
++        let result = cx
++            .spawn(async move |mut cx| get_fresh_credentials(&weak, &http_clone, &mut cx).await)
++            .await;
++
++        assert!(matches!(
++            result,
++            Err(LanguageModelCompletionError::NoApiKey { .. })
++        ));
++    }
++
++    #[gpui::test]
++    async fn test_fatal_refresh_clears_auth_state(cx: &mut TestAppContext) {
++        let http_client = FakeHttpClient::create(move |_request| async move {
++            Ok(http_client::Response::builder()
++                .status(401)
++                .body(http_client::AsyncBody::from(r#"{"error":"invalid_grant"}"#))?)
++        });
++
++        let creds_provider = Arc::new(FakeCredentialsProvider::new());
++        let state = cx.new(|_cx| State {
++            credentials: Some(make_expired_credentials()),
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: creds_provider.clone(),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let http: Arc<dyn HttpClient> = http_client;
++
++        let weak = weak_state.clone();
++        let http_clone = http.clone();
++        let result = cx
++            .spawn(async move |mut cx| get_fresh_credentials(&weak, &http_clone, &mut cx).await)
++            .await;
++
++        cx.run_until_parked();
++
++        assert!(result.is_err(), "fatal refresh should return an error");
++        cx.read(|cx| {
++            let s = state.read(cx);
++            assert!(
++                s.credentials.is_none(),
++                "credentials should be cleared on fatal refresh failure"
++            );
++            assert!(
++                s.last_auth_error.is_some(),
++                "last_auth_error should be set on fatal refresh failure"
++            );
++        });
++    }
++
++    #[gpui::test]
++    async fn test_transient_refresh_keeps_credentials(cx: &mut TestAppContext) {
++        let http_client = FakeHttpClient::create(move |_request| async move {
++            Ok(http_client::Response::builder()
++                .status(500)
++                .body(http_client::AsyncBody::from("Internal Server Error"))?)
++        });
++
++        let state = cx.new(|_cx| State {
++            credentials: Some(make_expired_credentials()),
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: Arc::new(FakeCredentialsProvider::new()),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let http: Arc<dyn HttpClient> = http_client;
++
++        let weak = weak_state.clone();
++        let http_clone = http.clone();
++        let result = cx
++            .spawn(async move |mut cx| get_fresh_credentials(&weak, &http_clone, &mut cx).await)
++            .await;
++
++        cx.run_until_parked();
++
++        assert!(result.is_err(), "transient refresh should return an error");
++        cx.read(|cx| {
++            let s = state.read(cx);
++            assert!(
++                s.credentials.is_some(),
++                "credentials should be kept on transient refresh failure"
++            );
++            assert!(
++                s.last_auth_error.is_none(),
++                "last_auth_error should not be set on transient refresh failure"
++            );
++        });
++    }
++
++    #[gpui::test]
++    async fn test_sign_out_during_refresh_discards_result(cx: &mut TestAppContext) {
++        let (gate_tx, gate_rx) = futures::channel::oneshot::channel::<()>();
++        let gate_rx = Arc::new(Mutex::new(Some(gate_rx)));
++        let gate_rx_clone = gate_rx.clone();
++
++        let http_client = FakeHttpClient::create(move |_request| {
++            let gate_rx = gate_rx_clone.clone();
++            async move {
++                // Wait until the gate is opened, simulating a slow network.
++                let rx = gate_rx.lock().take();
++                if let Some(rx) = rx {
++                    let _ = rx.await;
++                }
++                let body = fake_token_response();
++                Ok(http_client::Response::builder()
++                    .status(200)
++                    .body(http_client::AsyncBody::from(body))?)
++            }
++        });
++
++        let creds_provider = Arc::new(FakeCredentialsProvider::new());
++        let state = cx.new(|_cx| State {
++            credentials: Some(make_expired_credentials()),
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: creds_provider.clone(),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let http: Arc<dyn HttpClient> = http_client;
++
++        // Start a refresh
++        let weak = weak_state.clone();
++        let http_clone = http.clone();
++        let refresh_task =
++            cx.spawn(async move |mut cx| get_fresh_credentials(&weak, &http_clone, &mut cx).await);
++
++        cx.run_until_parked();
++
++        // Sign out while the refresh is in-flight
++        cx.update(|cx| {
++            do_sign_out(&weak_state, cx).detach();
++        });
++        cx.run_until_parked();
++
++        // Now let the refresh respond by opening the gate
++        let _ = gate_tx.send(());
++        cx.run_until_parked();
++
++        let result = refresh_task.await;
++        assert!(result.is_err(), "refresh should fail after sign-out");
++
++        cx.read(|cx| {
++            let s = state.read(cx);
++            assert!(
++                s.credentials.is_none(),
++                "sign-out should have cleared credentials"
++            );
++        });
++    }
++
++    #[gpui::test]
++    async fn test_sign_out_completes_fully(cx: &mut TestAppContext) {
++        let creds_provider = Arc::new(FakeCredentialsProvider::new());
++        // Pre-populate the credential store
++        creds_provider
++            .storage
++            .lock()
++            .replace(("Bearer".to_string(), b"some-creds".to_vec()));
++
++        let state = cx.new(|_cx| State {
++            credentials: Some(make_fresh_credentials()),
++            sign_in_task: None,
++            refresh_task: None,
++            load_task: None,
++            credentials_provider: creds_provider.clone(),
++            auth_generation: 0,
++            last_auth_error: None,
++            available_models: ChatGptModel::all(),
++            #[cfg(target_os = "ios")]
++            device_code: None,
++        });
++
++        let weak_state = cx.read(|_cx| state.downgrade());
++        let sign_out_task = cx.update(|cx| do_sign_out(&weak_state, cx));
++
++        cx.run_until_parked();
++        sign_out_task.await.expect("sign-out should succeed");
++
++        assert!(
++            creds_provider.storage.lock().is_none(),
++            "credential store should be empty after sign-out"
++        );
++        cx.read(|cx| {
++            assert!(
++                !state.read(cx).is_authenticated(),
++                "state should show not authenticated"
++            );
++        });
++    }
++
++    #[gpui::test]
++    async fn test_authenticate_awaits_initial_load(cx: &mut TestAppContext) {
++        let creds = make_fresh_credentials();
++        let creds_json = serde_json::to_vec(&creds).unwrap();
++        let creds_provider = Arc::new(FakeCredentialsProvider::new());
++        creds_provider
++            .storage
++            .lock()
++            .replace(("Bearer".to_string(), creds_json));
++
++        let http_client = FakeHttpClient::create(|_| async {
++            Ok(http_client::Response::builder()
++                .status(200)
++                .body(http_client::AsyncBody::default())?)
++        });
++
++        let provider =
++            cx.update(|cx| OpenAiSubscribedProvider::new(http_client, creds_provider, cx));
++
++        // Before load completes, authenticate should still await the load.
++        let auth_task = cx.update(|cx| provider.authenticate(cx));
++
++        // Drive the load to completion.
++        cx.run_until_parked();
++
++        let result = auth_task.await;
++        assert!(
++            result.is_ok(),
++            "authenticate should succeed after load completes with valid credentials"
++        );
++    }
++}
+diff --git a/crates/oauth_callback_server/Cargo.toml b/crates/oauth_callback_server/Cargo.toml
+new file mode 100644
+index 0000000000..5fcc6233af
+--- /dev/null
++++ b/crates/oauth_callback_server/Cargo.toml
+@@ -0,0 +1,23 @@
++[package]
++name = "oauth_callback_server"
++version = "0.1.0"
++edition.workspace = true
++publish = false
++license = "Apache-2.0"
++description = "Loopback OAuth 2.0 callback server and shared HTML response page for Zed sign-in flows"
++
++[lints]
++workspace = true
++
++[lib]
++path = "src/oauth_callback_server.rs"
++doctest = false
++
++[dependencies]
++anyhow.workspace = true
++
++[target.'cfg(not(target_family = "wasm"))'.dependencies]
++futures.workspace = true
++log.workspace = true
++tiny_http.workspace = true
++url.workspace = true
+diff --git a/crates/oauth_callback_server/LICENSE-APACHE b/crates/oauth_callback_server/LICENSE-APACHE
+new file mode 120000
+index 0000000000..1cd601d0a3
+--- /dev/null
++++ b/crates/oauth_callback_server/LICENSE-APACHE
+@@ -0,0 +1 @@
++../../LICENSE-APACHE
+\ No newline at end of file
+diff --git a/crates/oauth_callback_server/src/oauth_callback_server.rs b/crates/oauth_callback_server/src/oauth_callback_server.rs
+new file mode 100644
+index 0000000000..44ea229473
+--- /dev/null
++++ b/crates/oauth_callback_server/src/oauth_callback_server.rs
+@@ -0,0 +1,493 @@
++//! Loopback OAuth 2.0 callback server and shared HTML response page.
++//!
++//! Used by Zed's OAuth-based sign-in flows (e.g. MCP servers, ChatGPT
++//! Subscription) to receive the authorization code redirect from the user's
++//! browser. The HTML response page rendered to the browser is kept alongside
++//! the server so all OAuth callback presentation lives in one place.
++
++/// Generate a styled HTML page for OAuth callback responses.
++///
++/// Returns a complete HTML document (no HTTP headers) with a centered card
++/// layout styled to match Zed's dark theme. The `title` is rendered as a
++/// heading and `message` as body text below it.
++///
++/// When `is_error` is true, a red X icon is shown instead of the green
++/// checkmark.
++pub fn oauth_callback_page(title: &str, message: &str, is_error: bool) -> String {
++    let title = html_escape(title);
++    let message = html_escape(message);
++    let (icon_bg, icon_svg) = if is_error {
++        (
++            "#f38ba8",
++            r#"<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>"#,
++        )
++    } else {
++        (
++            "#a6e3a1",
++            r#"<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>"#,
++        )
++    };
++    format!(
++        r#"<!DOCTYPE html>
++<html lang="en">
++<head>
++<meta charset="utf-8">
++<meta name="viewport" content="width=device-width, initial-scale=1">
++<title>{title} — Zed</title>
++<style>
++  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
++  body {{
++    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
++    background: #1e1e2e;
++    color: #cdd6f4;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    min-height: 100vh;
++    padding: 1rem;
++  }}
++  .card {{
++    background: #313244;
++    border-radius: 12px;
++    padding: 2.5rem;
++    max-width: 420px;
++    width: 100%;
++    text-align: center;
++    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
++  }}
++  .icon {{
++    width: 48px;
++    height: 48px;
++    margin: 0 auto 1.5rem;
++    background: {icon_bg};
++    border-radius: 50%;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++  }}
++  .icon svg {{
++    width: 24px;
++    height: 24px;
++    stroke: #1e1e2e;
++    stroke-width: 3;
++    fill: none;
++  }}
++  h1 {{
++    font-size: 1.25rem;
++    font-weight: 600;
++    margin-bottom: 0.75rem;
++    color: #cdd6f4;
++  }}
++  p {{
++    font-size: 0.925rem;
++    line-height: 1.5;
++    color: #a6adc8;
++  }}
++  .brand {{
++    margin-top: 1.5rem;
++    font-size: 0.8rem;
++    color: #585b70;
++    letter-spacing: 0.05em;
++  }}
++</style>
++</head>
++<body>
++<div class="card">
++  <div class="icon">
++    {icon_svg}
++  </div>
++  <h1>{title}</h1>
++  <p>{message}</p>
++  <div class="brand">Zed</div>
++</div>
++</body>
++</html>"#,
++        title = title,
++        message = message,
++        icon_bg = icon_bg,
++        icon_svg = icon_svg,
++    )
++}
++
++fn html_escape(input: &str) -> String {
++    let mut output = String::with_capacity(input.len());
++    for ch in input.chars() {
++        match ch {
++            '&' => output.push_str("&amp;"),
++            '<' => output.push_str("&lt;"),
++            '>' => output.push_str("&gt;"),
++            '"' => output.push_str("&quot;"),
++            '\'' => output.push_str("&#x27;"),
++            _ => output.push(ch),
++        }
++    }
++    output
++}
++
++#[cfg(not(target_family = "wasm"))]
++mod server {
++    use super::oauth_callback_page;
++    use anyhow::{Context as _, Result, anyhow};
++    use std::str::FromStr;
++    use std::time::Duration;
++    use url::Url;
++
++    /// Parsed OAuth callback parameters from the authorization server redirect.
++    pub struct OAuthCallbackParams {
++        pub code: String,
++        pub state: String,
++    }
++
++    /// Configuration for the loopback OAuth callback server.
++    ///
++    /// OAuth servers compare `redirect_uri` against a per-client allow-list using
++    /// exact string matching (RFC 6749 §3.1.2), so the `host`, `preferred_port`,
++    /// and `path` here must match what's registered for the OAuth client_id.
++    #[derive(Clone, Copy)]
++    pub struct OAuthCallbackServerConfig {
++        /// Host portion of the redirect URI (typically `127.0.0.1` or `localhost`).
++        pub host: &'static str,
++        /// Preferred port. Use `0` for an OS-assigned ephemeral port.
++        pub preferred_port: u16,
++        /// Optional fallback port if `preferred_port` is unavailable. Only used
++        /// when `preferred_port` is non-zero.
++        pub fallback_port: Option<u16>,
++        /// Callback path on the redirect URI (e.g. `/callback`, `/auth/callback`).
++        pub path: &'static str,
++    }
++
++    impl Default for OAuthCallbackServerConfig {
++        fn default() -> Self {
++            Self {
++                host: "127.0.0.1",
++                preferred_port: 0,
++                fallback_port: None,
++                path: "/callback",
++            }
++        }
++    }
++
++    impl OAuthCallbackParams {
++        /// Parse the query string from a callback URL like
++        /// `http://127.0.0.1:<port>/callback?code=...&state=...`.
++        pub fn parse_query(query: &str) -> Result<Self> {
++            let mut code: Option<String> = None;
++            let mut state: Option<String> = None;
++            let mut error: Option<String> = None;
++            let mut error_description: Option<String> = None;
++
++            for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
++                match key.as_ref() {
++                    "code" => {
++                        if !value.is_empty() {
++                            code = Some(value.into_owned());
++                        }
++                    }
++                    "state" => {
++                        if !value.is_empty() {
++                            state = Some(value.into_owned());
++                        }
++                    }
++                    "error" => {
++                        if !value.is_empty() {
++                            error = Some(value.into_owned());
++                        }
++                    }
++                    "error_description" => {
++                        if !value.is_empty() {
++                            error_description = Some(value.into_owned());
++                        }
++                    }
++                    _ => {}
++                }
++            }
++
++            if let Some(error_code) = error {
++                anyhow::bail!(
++                    "OAuth authorization failed: {} ({})",
++                    error_code,
++                    error_description.as_deref().unwrap_or("no description")
++                );
++            }
++
++            let code = code.ok_or_else(|| anyhow!("missing 'code' parameter in OAuth callback"))?;
++            let state =
++                state.ok_or_else(|| anyhow!("missing 'state' parameter in OAuth callback"))?;
++
++            Ok(Self { code, state })
++        }
++    }
++
++    /// How long to wait for the browser to complete the OAuth flow before giving
++    /// up and releasing the loopback port.
++    const OAUTH_CALLBACK_TIMEOUT: Duration = Duration::from_secs(2 * 60);
++
++    /// Start a loopback HTTP server to receive the OAuth authorization callback.
++    ///
++    /// Binds to an ephemeral loopback port. Returns `(redirect_uri, callback_future)`.
++    /// The caller should use the redirect URI in the authorization request, open
++    /// the browser, then await the future to receive the callback.
++    pub fn start_oauth_callback_server() -> Result<(
++        String,
++        futures::channel::oneshot::Receiver<Result<OAuthCallbackParams>>,
++    )> {
++        start_oauth_callback_server_with_config(OAuthCallbackServerConfig::default())
++    }
++
++    /// Start a loopback HTTP server with custom host/port/path.
++    ///
++    /// Use this when the OAuth client requires a specific redirect URI that the
++    /// default ephemeral-port `http://127.0.0.1:<port>/callback` doesn't match.
++    pub fn start_oauth_callback_server_with_config(
++        config: OAuthCallbackServerConfig,
++    ) -> Result<(
++        String,
++        futures::channel::oneshot::Receiver<Result<OAuthCallbackParams>>,
++    )> {
++        let server = bind_callback_server(&config)?;
++        let port = server
++            .server_addr()
++            .to_ip()
++            .ok_or_else(|| anyhow!("server not bound to a TCP address"))?
++            .port();
++
++        let redirect_uri = format!("http://{}:{}{}", config.host, port, config.path);
++        let expected_path = config.path;
++
++        let (tx, rx) = futures::channel::oneshot::channel();
++
++        std::thread::spawn(move || {
++            let deadline = std::time::Instant::now() + OAUTH_CALLBACK_TIMEOUT;
++
++            loop {
++                if tx.is_canceled() {
++                    return;
++                }
++                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
++                if remaining.is_zero() {
++                    return;
++                }
++
++                let timeout = remaining.min(Duration::from_millis(500));
++                let Some(request) = (match server.recv_timeout(timeout) {
++                    Ok(req) => req,
++                    Err(_) => {
++                        let _ = tx.send(Err(anyhow!("OAuth callback server I/O error")));
++                        return;
++                    }
++                }) else {
++                    continue;
++                };
++
++                let raw_url = request.url().to_string();
++                let raw_path = raw_url.split('?').next().unwrap_or(&raw_url);
++                if raw_path == CANCEL_PATH {
++                    let response = tiny_http::Response::from_string("Cancelled")
++                        .with_status_code(200)
++                        .with_header(
++                            tiny_http::Header::from_str("Content-Type: text/plain")
++                                .expect("failed to construct response header"),
++                        )
++                        .with_header(
++                            tiny_http::Header::from_str("Connection: close")
++                                .expect("failed to construct response header"),
++                        );
++                    if let Err(err) = request.respond(response) {
++                        log::error!("Failed to send OAuth cancel response: {}", err);
++                    }
++                    let _ = tx.send(Err(anyhow!(
++                        "OAuth callback server was cancelled by another sign-in attempt"
++                    )));
++                    return;
++                }
++
++                let result = handle_oauth_callback_request(&request, expected_path);
++
++                let (status_code, body) = match &result {
++                    Ok(_) => (
++                        200,
++                        oauth_callback_page(
++                            "Authorization Successful",
++                            "You can close this tab and return to Zed.",
++                            false,
++                        ),
++                    ),
++                    Err(err) => {
++                        log::error!("OAuth callback error: {}", err);
++                        (
++                            400,
++                            oauth_callback_page(
++                                "Authorization Failed",
++                                "Something went wrong. Please try again from Zed.",
++                                true,
++                            ),
++                        )
++                    }
++                };
++
++                let response = tiny_http::Response::from_string(body)
++                    .with_status_code(status_code)
++                    .with_header(
++                        tiny_http::Header::from_str("Content-Type: text/html")
++                            .expect("failed to construct response header"),
++                    )
++                    .with_header(
++                        tiny_http::Header::from_str("Keep-Alive: timeout=0,max=0")
++                            .expect("failed to construct response header"),
++                    );
++                if let Err(err) = request.respond(response) {
++                    log::error!("Failed to send OAuth callback response: {}", err);
++                }
++
++                let _ = tx.send(result);
++                return;
++            }
++        });
++
++        Ok((redirect_uri, rx))
++    }
++
++    fn handle_oauth_callback_request(
++        request: &tiny_http::Request,
++        expected_path: &str,
++    ) -> Result<OAuthCallbackParams> {
++        let url = Url::parse(&format!("http://localhost{}", request.url()))
++            .context("malformed callback request URL")?;
++
++        if url.path() != expected_path {
++            anyhow::bail!("unexpected path in OAuth callback: {}", url.path());
++        }
++
++        let query = url
++            .query()
++            .ok_or_else(|| anyhow!("OAuth callback has no query string"))?;
++        OAuthCallbackParams::parse_query(query)
++    }
++
++    /// Callback path reserved for evicting a previously-running OAuth callback
++    /// server bound to the same port. Always handled, regardless of `config.path`.
++    const CANCEL_PATH: &str = "/cancel";
++
++    const BIND_MAX_ATTEMPTS: u32 = 10;
++    const BIND_RETRY_DELAY: Duration = Duration::from_millis(200);
++    const CANCEL_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
++
++    fn bind_callback_server(config: &OAuthCallbackServerConfig) -> Result<tiny_http::Server> {
++        // Ephemeral ports always succeed; skip the cancel-retry dance entirely.
++        if config.preferred_port == 0 {
++            let addr = format!("{}:0", config.host);
++            return tiny_http::Server::http(&addr).map_err(|err| {
++                anyhow!(err).context(format!(
++                    "Failed to bind loopback listener for OAuth callback on {addr}"
++                ))
++            });
++        }
++
++        match try_bind_with_cancel(config.host, config.preferred_port) {
++            Ok(server) => Ok(server),
++            Err(primary_err) => {
++                let Some(fallback_port) = config.fallback_port else {
++                    return Err(primary_err.context(format!(
++                        "Failed to bind loopback listener for OAuth callback on {}:{}",
++                        config.host, config.preferred_port,
++                    )));
++                };
++                log::warn!(
++                    "OAuth callback port {}:{} unavailable; falling back to port {}",
++                    config.host,
++                    config.preferred_port,
++                    fallback_port,
++                );
++                try_bind_with_cancel(config.host, fallback_port).map_err(|fallback_err| {
++                    fallback_err.context(format!(
++                        "Failed to bind loopback listener for OAuth callback on {}:{} or {}:{}",
++                        config.host, config.preferred_port, config.host, fallback_port,
++                    ))
++                })
++            }
++        }
++    }
++
++    /// Attempts to bind to a fixed `host:port`. On `AddrInUse`, sends a single
++    /// `GET /cancel` to the existing listener (to evict a previous OAuth flow
++    /// from this or a compatible client) and retries.
++    fn try_bind_with_cancel(host: &'static str, port: u16) -> Result<tiny_http::Server> {
++        let addr = format!("{host}:{port}");
++        let mut cancel_attempted = false;
++        let mut last_err: Option<anyhow::Error> = None;
++
++        for _ in 0..BIND_MAX_ATTEMPTS {
++            match tiny_http::Server::http(&addr) {
++                Ok(server) => return Ok(server),
++                Err(err) => {
++                    let is_addr_in_use = err
++                        .downcast_ref::<std::io::Error>()
++                        .map(|io_err| io_err.kind() == std::io::ErrorKind::AddrInUse)
++                        .unwrap_or(false);
++
++                    if !is_addr_in_use {
++                        return Err(anyhow!(err).context(format!(
++                            "Failed to bind loopback listener for OAuth callback on {addr}"
++                        )));
++                    }
++
++                    if !cancel_attempted {
++                        cancel_attempted = true;
++                        if let Err(cancel_err) = send_cancel_request(host, port) {
++                            log::warn!(
++                                "Failed to cancel previous OAuth callback server on {addr}: {cancel_err}"
++                            );
++                        }
++                    }
++
++                    last_err = Some(anyhow!(err));
++                    std::thread::sleep(BIND_RETRY_DELAY);
++                }
++            }
++        }
++
++        Err(last_err
++            .unwrap_or_else(|| anyhow!("unknown bind error"))
++            .context(format!(
++                "OAuth callback port {addr} remained in use after {BIND_MAX_ATTEMPTS} attempts"
++            )))
++    }
++
++    /// Sends `GET /cancel` to a listener on `host:port`, asking it to shut down.
++    ///
++    /// Best-effort: errors here are surfaced to the caller for logging but do
++    /// not block the subsequent rebind attempt.
++    fn send_cancel_request(host: &str, port: u16) -> std::io::Result<()> {
++        use std::io::{Read as _, Write as _};
++        use std::net::{TcpStream, ToSocketAddrs as _};
++
++        let addr = format!("{host}:{port}")
++            .to_socket_addrs()?
++            .next()
++            .ok_or_else(|| {
++                std::io::Error::new(
++                    std::io::ErrorKind::InvalidInput,
++                    format!("could not resolve {host}:{port}"),
++                )
++            })?;
++        let mut stream = TcpStream::connect_timeout(&addr, CANCEL_REQUEST_TIMEOUT)?;
++        stream.set_read_timeout(Some(CANCEL_REQUEST_TIMEOUT))?;
++        stream.set_write_timeout(Some(CANCEL_REQUEST_TIMEOUT))?;
++
++        stream.write_all(b"GET /cancel HTTP/1.1\r\n")?;
++        stream.write_all(format!("Host: {host}:{port}\r\n").as_bytes())?;
++        stream.write_all(b"Connection: close\r\n\r\n")?;
++
++        // Drain the response so the server can close cleanly. We don't care
++        // about the body; errors here are harmless.
++        let mut buf = [0u8; 64];
++        let _ = stream.read(&mut buf);
++        Ok(())
++    }
++}
++
++#[cfg(not(target_family = "wasm"))]
++pub use server::{
++    OAuthCallbackParams, OAuthCallbackServerConfig, start_oauth_callback_server,
++    start_oauth_callback_server_with_config,
++};
+diff --git a/crates/open_ai/src/completion.rs b/crates/open_ai/src/completion.rs
+index 81fa79d35e..ad7827e5d3 100644
+--- a/crates/open_ai/src/completion.rs
++++ b/crates/open_ai/src/completion.rs
+@@ -197,6 +197,8 @@ pub fn into_open_ai_response(
+ 
+     ResponseRequest {
+         model: model_id.into(),
++        instructions: None,
++        store: None,
+         input: input_items,
+         stream,
+         temperature,
+@@ -222,6 +224,7 @@ pub fn into_open_ai_response(
+             effort,
+             summary: Some(crate::responses::ReasoningSummaryMode::Auto),
+         }),
++        service_tier: None,
+     }
+ }
+ 
+diff --git a/crates/open_ai/src/responses.rs b/crates/open_ai/src/responses.rs
+index 34dbd46c37..75324a0b43 100644
+--- a/crates/open_ai/src/responses.rs
++++ b/crates/open_ai/src/responses.rs
+@@ -9,6 +9,10 @@ use crate::{ReasoningEffort, RequestError, Role, ToolChoice};
+ #[derive(Serialize, Debug)]
+ pub struct Request {
+     pub model: String,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub instructions: Option<String>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub store: Option<bool>,
+     #[serde(skip_serializing_if = "Vec::is_empty")]
+     pub input: Vec<ResponseInputItem>,
+     #[serde(default)]
+@@ -29,6 +33,8 @@ pub struct Request {
+     pub prompt_cache_key: Option<String>,
+     #[serde(skip_serializing_if = "Option::is_none")]
+     pub reasoning: Option<ReasoningConfig>,
++    #[serde(skip_serializing_if = "Option::is_none")]
++    pub service_tier: Option<String>,
+ }
+ 
+ #[derive(Debug, Serialize, Deserialize)]
+@@ -315,13 +321,27 @@ pub async fn stream_response(
+     api_url: &str,
+     api_key: &str,
+     request: Request,
++) -> Result<BoxStream<'static, Result<StreamEvent>>, RequestError> {
++    stream_response_with_headers(client, provider_name, api_url, api_key, request, Vec::new()).await
++}
++
++pub async fn stream_response_with_headers(
++    client: &dyn HttpClient,
++    provider_name: &str,
++    api_url: &str,
++    api_key: &str,
++    request: Request,
++    extra_headers: Vec<(String, String)>,
+ ) -> Result<BoxStream<'static, Result<StreamEvent>>, RequestError> {
+     let uri = format!("{api_url}/responses");
+-    let request_builder = HttpRequest::builder()
++    let mut request_builder = HttpRequest::builder()
+         .method(Method::POST)
+         .uri(uri)
+         .header("Content-Type", "application/json")
+         .header("Authorization", format!("Bearer {}", api_key.trim()));
++    for (name, value) in &extra_headers {
++        request_builder = request_builder.header(name.as_str(), value.as_str());
++    }
+ 
+     let is_streaming = request.stream;
+     let request = request_builder
+diff --git a/crates/zed_credentials_provider/src/zed_credentials_provider.rs b/crates/zed_credentials_provider/src/zed_credentials_provider.rs
+index 6705e58d40..9775dffbf2 100644
+--- a/crates/zed_credentials_provider/src/zed_credentials_provider.rs
++++ b/crates/zed_credentials_provider/src/zed_credentials_provider.rs
+@@ -43,6 +43,11 @@ pub fn global(cx: &App) -> Arc<dyn CredentialsProvider> {
+ }
+ 
+ fn new(cx: &App) -> Arc<dyn CredentialsProvider> {
++    #[cfg(target_os = "ios")]
++    {
++        let _ = cx;
++        return Arc::new(KeychainCredentialsProvider);
++    }
+     let use_development_provider = match ReleaseChannel::try_global(cx) {
+         Some(ReleaseChannel::Dev) => {
+             // In development we default to using the development

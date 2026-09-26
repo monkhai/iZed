@@ -1675,6 +1675,51 @@ fn open_ssh_project(
     .detach();
 }
 
+fn ensure_preview_theme_in_settings() {
+    let path = paths::settings_file();
+    let theme = serde_json::json!({
+        "mode": "system",
+        "light": "Vercel Light",
+        "dark": "Vercel Dark"
+    });
+    match std::fs::read_to_string(path) {
+        Ok(mut text) => {
+            let (Some(mut settings), _) = settings::parse_json::<serde_json::Value>(&text) else {
+                log::warn!("Could not parse iPad settings to preserve the preview theme");
+                return;
+            };
+            let current_theme = settings.get("theme");
+            let uses_zed_default = current_theme.is_none()
+                || current_theme.is_some_and(|current| {
+                    current.get("light").and_then(|value| value.as_str()) == Some("One Light")
+                        && current.get("dark").and_then(|value| value.as_str()) == Some("One Dark")
+                });
+            if !uses_zed_default {
+                return;
+            }
+            let original = settings.clone();
+            settings["theme"] = theme;
+            settings::update_value_in_json_text(
+                &mut text,
+                &mut Vec::new(),
+                2,
+                &original,
+                &settings,
+                &mut Vec::new(),
+            );
+            if let Err(error) = std::fs::write(path, text) {
+                log::error!("Could not save the iPad preview theme: {error}");
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            if let Err(error) = std::fs::write(path, serde_json::json!({"theme": theme}).to_string()) {
+                log::error!("Could not initialize iPad settings: {error}");
+            }
+        }
+        Err(error) => log::error!("Could not read iPad settings: {error}"),
+    }
+}
+
 pub fn open(cx: &mut App) {
     // Zed's desktop data paths resolve under hidden home directories, which
     // iPadOS does not let this app create. Keep its database and agent threads
@@ -1688,6 +1733,7 @@ pub fn open(cx: &mut App) {
     if let Err(error) = std::fs::create_dir_all(paths::config_dir()) {
         log::error!("Could not create iPad Zed config directory: {error}");
     }
+    ensure_preview_theme_in_settings();
     if let Err(error) = cx.text_system().add_fonts(vec![
         Cow::Borrowed(include_bytes!("../fonts/JetBrainsMonoNerdFont-Light.ttf")),
         Cow::Borrowed(include_bytes!("../fonts/JetBrainsMono-Regular.ttf")),
@@ -1703,7 +1749,7 @@ pub fn open(cx: &mut App) {
     trusted_worktrees::init(trusted_paths, cx);
     settings::init(cx);
     settings::SettingsStore::update_global(cx, |store, cx| {
-        let _ = store.set_user_settings(
+        let _ = store.set_global_settings(
             r#"{"vim_mode":true,"relative_line_numbers":"enabled","load_direnv":"disabled","buffer_font_family":"JetBrainsMono Nerd Font","buffer_font_weight":300,"buffer_font_size":15,"ui_font_family":"JetBrains Mono","ui_font_weight":500,"ui_font_size":16,"theme":{"mode":"system","light":"Vercel Light","dark":"Vercel Dark"}}"#,
             cx,
         );

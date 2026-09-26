@@ -22,9 +22,11 @@
 - **Zed's workspace.** Editor, tabs, splits, project panel, file operations, File Finder, a curated Command Palette, Vim mode, hardware keyboard shortcuts, and built-in syntax highlighting.
 - **Language tools over SSH.** Zed runs language servers on the selected Machine. Rust diagnostics, completions, hover, Go to Definition, and formatting have been verified on iPad. TypeScript completions, hover, Go to Definition, and formatting have also been verified; other built-in languages use the same remote path.
 - **Remote terminal.** Zed's terminal panel opens with Command-J and starts a shell in the selected project directory on its Machine. You can open additional terminal sessions from the Command Palette.
+- **Remote debugger.** Zed's debugger panel supports project debug configurations, breakpoints, stepping, and variable inspection over SSH. macOS debugging permission is explained in the panel when a Machine needs it.
+- **Zed Agent Panel.** Sign in with a ChatGPT subscription from the iPad, choose a ChatGPT model, set its supported reasoning effort, and use Zed's native Agent in an SSH project. Fast mode appears for models that offer it. Credentials are stored in the iPad Keychain.
 - **iPad interaction.** Touch and pointer context menus, trackpad scrolling with momentum, and keyboard-first navigation through the Machine and directory picker.
 
-The debugger, AI panel, and broader language-server verification are still on the roadmap. Command Palette entries are intentionally limited to actions available in this build.
+Broader language-server and Agent workflow verification are still on the roadmap. Command Palette entries are intentionally limited to actions available in this build.
 
 ## How it is built
 
@@ -37,6 +39,9 @@ This repository combines an iOS GPUI platform layer with a small iPad host for Z
 | [`patches/zed-ios.patch`](patches/zed-ios.patch) | Changes to the pinned Zed source |
 | [`patches/lsp-ios.patch`](patches/lsp-ios.patch) | Remote language-server capability checks for iPad |
 | [`patches/terminal-ios.patch`](patches/terminal-ios.patch) | SSH terminal transport for Zed's terminal panel on iPad |
+| [`patches/debugger-ios.patch`](patches/debugger-ios.patch) | Remote debugger integration for iPad |
+| [`patches/ai-ios.patch`](patches/ai-ios.patch) | Agent Panel and prompt storage support for iPad |
+| [`patches/chatgpt-ios.patch`](patches/chatgpt-ios.patch) | ChatGPT subscription provider and iPad sign-in flow |
 | [`patches/trash-ios.patch`](patches/trash-ios.patch) | iOS support for the Trash dependency |
 | [`scripts/prepare-zed.sh`](scripts/prepare-zed.sh) | Apply the patch and build macOS remote servers |
 | [`example/ios`](example/ios) | Xcode project specification, launch screen, and app assets |

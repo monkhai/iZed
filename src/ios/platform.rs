@@ -191,6 +191,10 @@ impl Platform for IosPlatform {
     }
 
     fn open_url(&self, url: &str) {
+        let Ok(url) = std::ffi::CString::new(url) else {
+            log::error!("Cannot open URL containing a null byte");
+            return;
+        };
         unsafe {
             let url_string: *mut AnyObject =
                 msg_send![class!(NSString), stringWithUTF8String: url.as_ptr()];
@@ -328,17 +332,48 @@ impl Platform for IosPlatform {
         }
     }
 
-    fn write_credentials(&self, _url: &str, _username: &str, _password: &[u8]) -> Task<Result<()>> {
-        // Would use iOS Keychain Services
-        Task::ready(Err(anyhow!("Keychain not yet implemented for iOS")))
+    fn write_credentials(&self, url: &str, username: &str, password: &[u8]) -> Task<Result<()>> {
+        let username_bytes = username.as_bytes();
+        let mut value = Vec::with_capacity(4 + username_bytes.len() + password.len());
+        value.extend_from_slice(&(username_bytes.len() as u32).to_be_bytes());
+        value.extend_from_slice(username_bytes);
+        value.extend_from_slice(password);
+        Task::ready(security_framework::passwords::set_generic_password(
+            url, "iZed", &value,
+        ).map_err(|error| anyhow!("Could not save credentials in iPad Keychain: {error}")))
     }
 
-    fn read_credentials(&self, _url: &str) -> Task<Result<Option<(String, Vec<u8>)>>> {
-        Task::ready(Err(anyhow!("Keychain not yet implemented for iOS")))
+    fn read_credentials(&self, url: &str) -> Task<Result<Option<(String, Vec<u8>)>>> {
+        let result = match security_framework::passwords::get_generic_password(url, "iZed") {
+            Ok(value) => {
+                let Some(length) = value.get(..4) else {
+                    return Task::ready(Err(anyhow!("Invalid iPad Keychain entry")));
+                };
+                let username_len = u32::from_be_bytes(length.try_into().unwrap()) as usize;
+                let Some(username_end) = 4usize.checked_add(username_len) else {
+                    return Task::ready(Err(anyhow!("Invalid iPad Keychain entry")));
+                };
+                let Some(username) = value.get(4..username_end) else {
+                    return Task::ready(Err(anyhow!("Invalid iPad Keychain entry")));
+                };
+                let Ok(username) = std::str::from_utf8(username) else {
+                    return Task::ready(Err(anyhow!("Invalid iPad Keychain entry")));
+                };
+                Ok(Some((username.to_owned(), value[username_end..].to_vec())))
+            }
+            Err(error) if error.code() == -25300 => Ok(None),
+            Err(error) => Err(anyhow!("Could not read iPad Keychain: {error}")),
+        };
+        Task::ready(result)
     }
 
-    fn delete_credentials(&self, _url: &str) -> Task<Result<()>> {
-        Task::ready(Err(anyhow!("Keychain not yet implemented for iOS")))
+    fn delete_credentials(&self, url: &str) -> Task<Result<()>> {
+        let result = match security_framework::passwords::delete_generic_password(url, "iZed") {
+            Ok(()) => Ok(()),
+            Err(error) if error.code() == -25300 => Ok(()),
+            Err(error) => Err(anyhow!("Could not delete iPad Keychain entry: {error}")),
+        };
+        Task::ready(result)
     }
 
     fn on_keyboard_layout_change(&self, _callback: Box<dyn FnMut()>) {
