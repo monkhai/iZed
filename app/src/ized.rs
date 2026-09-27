@@ -2226,6 +2226,7 @@ pub fn open(cx: &mut App) {
         });
     });
     editor::init(cx);
+    diagnostics::init(cx);
     file_finder::init(cx);
     command_palette::init(cx);
     command_palette_hooks::CommandPaletteFilter::update_global(cx, |filter, _| {

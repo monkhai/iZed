@@ -6,7 +6,7 @@ description = "iZed iPad app host and GPUI platform integration"
 publish = false
 
 [features]
-ized = ["dep:agent", "dep:agent_ui", "dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:gpui_tokio", "dep:grammars", "dep:language", "dep:language_model", "dep:language_models", "dep:node_runtime", "dep:paths", "dep:project", "dep:project_panel", "dep:prompt_store", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:sidebar", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:util", "dep:vim", "dep:workspace", "dep:zed_actions"]
+ized = ["dep:agent", "dep:agent_ui", "dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:diagnostics", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:gpui_tokio", "dep:grammars", "dep:language", "dep:language_model", "dep:language_models", "dep:node_runtime", "dep:paths", "dep:project", "dep:project_panel", "dep:prompt_store", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:sidebar", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:util", "dep:vim", "dep:workspace", "dep:zed_actions"]
 
 [lib]
 name = "ized_app"
@@ -33,6 +33,7 @@ command_palette_hooks = { git = "https://github.com/zed-industries/zed", rev = "
 dap_adapters = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "dap_adapters", optional = true }
 db = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "db", optional = true }
 debugger_ui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "debugger_ui", optional = true }
+diagnostics = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "diagnostics", optional = true }
 editor = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "editor", optional = true }
 file_finder = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "file_finder", optional = true }
 fs = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "fs", optional = true }
