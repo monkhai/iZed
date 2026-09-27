@@ -11,6 +11,7 @@
     "bindings": {
       "cmd-b": "project_panel::Toggle",
       "cmd-j": "terminal_panel::Toggle",
+      "cmd-shift-g": "git::Diff",
       "alt-cmd-s": "multi_workspace::ToggleWorkspaceSidebar",
       "cmd-shift-a": "agent::ToggleFocus",
       "cmd-e": "workspace::FocusCenterPane",

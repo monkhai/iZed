@@ -94,6 +94,27 @@ impl workspace::StatusItemView for SshConnectionStatus {
     ) {}
 }
 
+fn add_git_diff_toolbar(
+    workspace: &Workspace,
+    pane: &Entity<workspace::Pane>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let languages = workspace.project().read(cx).languages().clone();
+    pane.update(cx, |pane, cx| {
+        pane.toolbar().update(cx, |toolbar, cx| {
+            let search_bar = cx.new(|cx| search::BufferSearchBar::new(Some(languages), window, cx));
+            toolbar.add_item(search_bar, window, cx);
+            let project_diff_toolbar = cx.new(|cx| git_ui::project_diff::ProjectDiffToolbar::new(workspace, cx));
+            toolbar.add_item(project_diff_toolbar, window, cx);
+            let branch_diff_toolbar = cx.new(git_ui::project_diff::BranchDiffToolbar::new);
+            toolbar.add_item(branch_diff_toolbar, window, cx);
+            let commit_view_toolbar = cx.new(|_| git_ui::commit_view::CommitViewToolbar::new());
+            toolbar.add_item(commit_view_toolbar, window, cx);
+        });
+    });
+}
+
 fn ipad_picker_button(
     id: &'static str,
     label: impl Into<SharedString>,
@@ -1934,6 +1955,14 @@ fn open_ssh_project(
                         workspace.update_in(cx, |workspace, window, cx| {
                             workspace.add_panel(panel, window, cx);
                         })?;
+                        let git_panel = git_ui::git_panel::GitPanel::load(
+                            workspace.downgrade(),
+                            cx.clone(),
+                        )
+                        .await?;
+                        workspace.update_in(cx, |workspace, window, cx| {
+                            workspace.add_panel(git_panel, window, cx);
+                        })?;
                         let terminal_panel = terminal_view::terminal_panel::TerminalPanel::load(
                             workspace.downgrade(),
                             cx.clone(),
@@ -2163,6 +2192,24 @@ pub fn open(cx: &mut App) {
     AppState::set_global(app_state.clone(), cx);
 
     workspace::init(app_state.clone(), cx);
+    search::init(cx);
+    cx.set_global(workspace::PaneSearchBarCallbacks {
+        setup_search_bar: |languages, toolbar, window, cx| {
+            let search_bar = cx.new(|cx| search::BufferSearchBar::new(languages, window, cx));
+            toolbar.update(cx, |toolbar, cx| toolbar.add_item(search_bar, window, cx));
+        },
+        wrap_div_with_search_actions: search::buffer_search::register_pane_search_actions,
+    });
+    cx.observe_new(|workspace: &mut Workspace, window, cx| {
+        let Some(window) = window else { return };
+        add_git_diff_toolbar(workspace, workspace.active_pane(), window, cx);
+        let workspace_handle = cx.entity();
+        cx.subscribe_in(&workspace_handle, window, |workspace, _, event, window, cx| {
+            if let workspace::Event::PaneAdded(pane) = event {
+                add_git_diff_toolbar(workspace, pane, window, cx);
+            }
+        }).detach();
+    }).detach();
     // The macOS keymap binds Command-Plus/Minus/Zero to these actions. Zed's
     // desktop app registers their handlers in zed.rs, which the iPad host does
     // not run, so install the in-memory editor zoom behavior here.
@@ -2226,6 +2273,7 @@ pub fn open(cx: &mut App) {
         });
     });
     editor::init(cx);
+    git_ui::init(cx);
     diagnostics::init(cx);
     file_finder::init(cx);
     command_palette::init(cx);
@@ -2275,6 +2323,11 @@ pub fn open(cx: &mut App) {
             "workspace::ActivateNextPane",
             "workspace::ActivatePreviousPane",
             "project_panel::Toggle",
+            "git_panel::Toggle",
+            "git_panel::ToggleFocus",
+            "git::Diff",
+            "git::BranchDiff",
+            "git::OpenModifiedFiles",
             "terminal_panel::Toggle",
             "terminal_panel::ToggleFocus",
             "workspace::NewTerminal",
