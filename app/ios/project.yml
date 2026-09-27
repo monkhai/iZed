@@ -44,7 +44,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.monkhai.ized
         PRODUCT_NAME: iZed
         "IZED_STATIC_LIB[sdk=iphonesimulator*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios-sim/debug/libized_app.a"
-        "IZED_STATIC_LIB[sdk=iphoneos*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios/debug/libized_app.a"
+        "IZED_STATIC_LIB[sdk=iphoneos*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios/ios-device/libized_app.a"
         INFOPLIST_FILE: Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -103,7 +103,7 @@ targets:
       configs:
         Debug:
           GCC_OPTIMIZATION_LEVEL: "0"
-          DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
+          DEBUG_INFORMATION_FORMAT: "dwarf"
           SWIFT_OPTIMIZATION_LEVEL: "-Onone"
         Release:
           "IZED_STATIC_LIB[sdk=iphonesimulator*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios-sim/release/libized_app.a"
@@ -130,10 +130,11 @@ targets:
           fi
 
           # Determine build profile
+          CARGO_FLAGS=()
           if [ "${CONFIGURATION}" = "Release" ]; then
-            CARGO_FLAGS="--release"
-          else
-            CARGO_FLAGS=""
+            CARGO_FLAGS=(--release)
+          elif [ "${PLATFORM_NAME}" = "iphoneos" ]; then
+            CARGO_FLAGS=(--profile ios-device)
           fi
 
           echo "Building ized-platform for ${RUST_TARGET} (${CONFIGURATION})..."
@@ -142,7 +143,7 @@ targets:
           rustup target add "${RUST_TARGET}" 2>/dev/null || true
 
           # Build the Rust static library
-          cargo build --lib --target "${RUST_TARGET}" --features ized ${CARGO_FLAGS} 2>&1
+          cargo build --lib --target "${RUST_TARGET}" --features ized "${CARGO_FLAGS[@]}" 2>&1
 
           echo "Rust build complete for ${RUST_TARGET}"
         shell: /bin/bash

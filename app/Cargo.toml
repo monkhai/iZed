@@ -98,3 +98,11 @@ panic = "abort"
 [profile.dev]
 opt-level = 0
 debug = true
+
+# Keep iPad device builds representative of real use while retaining symbols
+# and incremental rebuilds for profiling and iteration.
+[profile.ios-device]
+inherits = "dev"
+opt-level = 2
+codegen-units = 8
+debug = 1
