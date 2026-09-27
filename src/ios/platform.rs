@@ -36,6 +36,7 @@ pub(crate) struct IosPlatformState {
     quit_callback: Option<Box<dyn FnMut()>>,
     open_urls_callback: Option<Box<dyn FnMut(Vec<String>)>>,
     thermal_state_callback: Option<Box<dyn FnMut()>>,
+    clipboard_item: Option<(isize, ClipboardItem)>,
 }
 
 impl Default for IosPlatform {
@@ -58,6 +59,7 @@ impl IosPlatform {
             quit_callback: None,
             open_urls_callback: None,
             thermal_state_callback: None,
+            clipboard_item: None,
         }))
     }
 }
@@ -312,6 +314,13 @@ impl Platform for IosPlatform {
                 let ns_string: *mut AnyObject =
                     msg_send![class!(NSString), stringWithUTF8String: text.as_ptr()];
                 let _: () = msg_send![pasteboard, setString: ns_string];
+                // UIKit shares the plain text with other apps. Retain Zed's
+                // selection metadata for pastes within this app until another
+                // writer changes the system pasteboard.
+                let change_count: isize = msg_send![pasteboard, changeCount];
+                self.0.lock().clipboard_item = Some((change_count, item));
+            } else {
+                self.0.lock().clipboard_item = None;
             }
         }
     }
@@ -319,6 +328,16 @@ impl Platform for IosPlatform {
     fn read_from_clipboard(&self) -> Option<ClipboardItem> {
         unsafe {
             let pasteboard: *mut AnyObject = msg_send![class!(UIPasteboard), generalPasteboard];
+            let change_count: isize = msg_send![pasteboard, changeCount];
+            if let Some((_, item)) = self
+                .0
+                .lock()
+                .clipboard_item
+                .as_ref()
+                .filter(|(saved_count, _)| *saved_count == change_count)
+            {
+                return Some(item.clone());
+            }
             let string: *mut AnyObject = msg_send![pasteboard, string];
             if string.is_null() {
                 return None;
