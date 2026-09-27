@@ -19,6 +19,7 @@ use workspace::{AppState, MultiWorkspace, Workspace};
 
 struct SshConnectionStatus {
     client: Entity<RemoteClient>,
+    _model_memory: Option<Entity<ProjectModelMemory>>,
     last_state: ConnectionState,
     show_transient: bool,
     transient_generation: u64,
@@ -65,7 +66,7 @@ impl SshConnectionStatus {
             }
             cx.notify();
         });
-        Self { client, last_state, show_transient: last_state != ConnectionState::Connected, transient_generation: 0, _subscription: subscription }
+        Self { client, _model_memory: None, last_state, show_transient: last_state != ConnectionState::Connected, transient_generation: 0, _subscription: subscription }
     }
 }
 
@@ -247,6 +248,137 @@ impl SshTarget {
             "Enter an absolute project folder path"
         );
         Ok(options)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ProjectModelSelection {
+    provider: String,
+    model: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ProjectModelPreference {
+    project: SshTarget,
+    selection: ProjectModelSelection,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct ProjectModelStore {
+    projects: Vec<ProjectModelPreference>,
+}
+
+impl ProjectModelStore {
+    fn path() -> PathBuf {
+        SshTarget::config_path().with_file_name("project-models.json")
+    }
+
+    fn load() -> Self {
+        match std::fs::read(Self::path()) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+                log::warn!("Could not read project model preferences: {error}");
+                Self::default()
+            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(error) => {
+                log::warn!("Could not read project model preferences: {error}");
+                Self::default()
+            }
+        }
+    }
+
+    fn selection(&self, project: &SshTarget) -> Option<ProjectModelSelection> {
+        self.projects.iter().find(|entry| entry.project.same_project(project))
+            .map(|entry| entry.selection.clone())
+    }
+
+    fn remember(&mut self, project: SshTarget, selection: ProjectModelSelection) -> anyhow::Result<()> {
+        if let Some(entry) = self.projects.iter_mut().find(|entry| entry.project.same_project(&project)) {
+            entry.selection = selection;
+        } else {
+            self.projects.push(ProjectModelPreference { project, selection });
+        }
+        let path = Self::path();
+        let temporary = path.with_extension("json.tmp");
+        std::fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
+        std::fs::rename(temporary, path)?;
+        Ok(())
+    }
+}
+
+struct ProjectModelMemory {
+    project: SshTarget,
+    panel: Entity<agent_ui::AgentPanel>,
+    selection: Option<ProjectModelSelection>,
+    tracked_thread: Option<Entity<agent::Thread>>,
+    _panel_observation: Subscription,
+    _panel_events: Subscription,
+    _thread_observation: Option<Subscription>,
+}
+
+impl ProjectModelMemory {
+    fn new(project: SshTarget, panel: Entity<agent_ui::AgentPanel>, cx: &mut Context<Self>) -> Self {
+        let selection = ProjectModelStore::load().selection(&project);
+        let panel_observation = cx.observe(&panel, |this, _, cx| this.refresh(cx));
+        let panel_events = cx.subscribe(&panel, |this, _, event: &agent_ui::AgentPanelEvent, cx| {
+            if matches!(event, agent_ui::AgentPanelEvent::ActiveViewChanged) {
+                this.refresh(cx);
+            }
+        });
+        Self {
+            project, panel, selection, tracked_thread: None,
+            _panel_observation: panel_observation,
+            _panel_events: panel_events,
+            _thread_observation: None,
+        }
+    }
+
+    fn refresh(&mut self, cx: &mut Context<Self>) {
+        let Some(view) = self.panel.read(cx).active_conversation_view().cloned() else {
+            self.tracked_thread = None;
+            self._thread_observation = None;
+            return;
+        };
+        let Some(thread) = view.read(cx).as_native_thread(cx) else { return; };
+        if self.tracked_thread.as_ref().is_some_and(|current| current == &thread) {
+            return;
+        }
+        self._thread_observation = None;
+        self.tracked_thread = Some(thread.clone());
+
+        if self.panel.read(cx).active_thread_is_draft(cx) {
+            if let Some(selection) = &self.selection {
+                let selected = language_model::SelectedModel {
+                    provider: language_model::LanguageModelProviderId(selection.provider.clone().into()),
+                    model: language_model::LanguageModelId(selection.model.clone().into()),
+                };
+                if let Some(configured) = language_model::LanguageModelRegistry::global(cx)
+                    .update(cx, |registry, cx| registry.select_model(&selected, cx))
+                {
+                    thread.update(cx, |thread, cx| thread.set_model(configured.model, cx));
+                }
+            }
+        }
+
+        self.remember_thread_model(&thread, cx);
+        self._thread_observation = Some(cx.observe(&thread, |this, thread, cx| {
+            this.remember_thread_model(&thread, cx);
+        }));
+    }
+
+    fn remember_thread_model(&mut self, thread: &Entity<agent::Thread>, cx: &mut Context<Self>) {
+        let Some(model) = thread.read(cx).model() else { return; };
+        let selection = ProjectModelSelection {
+            provider: model.provider_id().0.to_string(),
+            model: model.id().0.to_string(),
+        };
+        if self.selection.as_ref() == Some(&selection) { return; }
+        let mut store = ProjectModelStore::load();
+        if let Err(error) = store.remember(self.project.clone(), selection.clone()) {
+            log::warn!("Could not save project model preference: {error:#}");
+            return;
+        }
+        self.selection = Some(selection);
     }
 }
 
@@ -1706,6 +1838,10 @@ fn open_ssh_project(
 ) {
     target.address = target.address.trim().to_owned();
     target.folder = target.folder.trim().to_owned();
+    // The directory picker includes a trailing slash, but Zed serializes the
+    // worktree root without one. Both opens must use the same workspace key.
+    let path = PathBuf::from(&target.folder).components().collect::<PathBuf>();
+    target.folder = path.to_string_lossy().into_owned();
     let mut ssh_options = match target.connection_options() {
         Ok(options) => options,
         Err(error) => {
@@ -1720,7 +1856,6 @@ fn open_ssh_project(
     {
         ssh_options.nickname = Some(machine.name);
     }
-    let path = PathBuf::from(target.folder.trim());
     let existing_workspace = window.update(cx, |multi, window, cx| {
         let paths = PathList::new(&[path.clone()]);
         let host = RemoteConnectionOptions::Ssh(ssh_options.clone());
@@ -1742,6 +1877,7 @@ fn open_ssh_project(
 
     cx.spawn(async move |cx| {
         let started = Instant::now();
+        let model_project = target.clone();
         let result: anyhow::Result<()> = async {
             remote::check_ssh_directory(
                 ssh_options.clone(),
@@ -1774,11 +1910,12 @@ fn open_ssh_project(
 
             window.update(cx, |multi, window, cx| {
                 let workspace = multi.workspace().clone();
-                if let Some(client) = workspace.read(cx).project().read(cx).remote_client() {
+                let status = if let Some(client) = workspace.read(cx).project().read(cx).remote_client() {
                     let status = cx.new(|cx| SshConnectionStatus::new(client, cx));
                     let status_bar = workspace.read(cx).status_bar().clone();
-                    status_bar.update(cx, |bar, cx| bar.add_left_item(status, window, cx));
-                }
+                    status_bar.update(cx, |bar, cx| bar.add_left_item(status.clone(), window, cx));
+                    Some(status)
+                } else { None };
                 if let Some(trusted) = TrustedWorktrees::try_get_global(cx) {
                     let worktree_store = workspace.read(cx).project().read(cx).worktree_store();
                     trusted.update(cx, |trusted, cx| {
@@ -1819,11 +1956,18 @@ fn open_ssh_project(
                         )
                         .await?;
                         workspace.update_in(cx, |workspace, window, cx| {
-                            workspace.add_panel(agent_panel, window, cx);
+                            workspace.add_panel(agent_panel.clone(), window, cx);
                             workspace.register_action(agent_ui::AgentPanel::toggle_focus);
                             workspace.register_action(agent_ui::AgentPanel::focus);
                             workspace.register_action(agent_ui::AgentPanel::toggle);
                         })?;
+                        if let Some(status) = status {
+                            workspace.update_in(cx, |_, _, cx| {
+                                let memory = cx.new(|cx| ProjectModelMemory::new(model_project, agent_panel, cx));
+                                memory.update(cx, |memory, cx| memory.refresh(cx));
+                                status.update(cx, |status, _| status._model_memory = Some(memory));
+                            })?;
+                        }
                         workspace.update_in(cx, |workspace, window, cx| {
                             if workspace.active_item(cx).is_some()
                                 || !workspace.left_dock().read(cx).is_open()
