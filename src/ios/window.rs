@@ -654,7 +654,11 @@ unsafe fn handle_hardware_presses(
         };
         let modified = flags & ((1 << 18) | (1 << 19) | (1 << 20)) != 0;
         let navigation = matches!(code, 0x29 | 0x49..=0x4B | 0x4D..=0x52);
-        let action = if modified || navigation {
+        // Shift-Return has its own editor binding (insert a newline in the
+        // Agent composer). Sending it as text drops the Shift modifier and
+        // makes the composer treat it like an ordinary Return/send.
+        let shifted_return = code == 0x28 && flags & (1 << 17) != 0;
+        let action = if modified || navigation || shifted_return {
             Some(HardwareKeyAction::Key {
                 code: code as u32,
                 flags: flags as u32,
