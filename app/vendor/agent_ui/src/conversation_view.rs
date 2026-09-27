@@ -2542,6 +2542,51 @@ impl ConversationView {
         // TODO: Change this once we have title summarization for external agents.
         let title = self.agent.agent_id().0;
 
+        // iPadOS GPUI windows occupy the whole scene. A desktop-style popup
+        // would cover the editor and steal its input, so show the completion
+        // notice in the existing workspace window instead.
+        if cfg!(target_os = "ios") {
+            if settings.notify_when_agent_waiting != NotifyWhenAgentWaiting::Never {
+                let caption: SharedString = caption.into();
+                let workspace_handle = self.workspace.clone();
+                let agent = self.connection_key.clone();
+                if let Some(workspace) = workspace_handle.upgrade() {
+                    workspace.update(cx, |workspace, cx| {
+                        workspace.show_toast(
+                            Toast::new(
+                                NotificationId::unique::<AgentNotification>(),
+                                format!("{title}: {caption}"),
+                            )
+                            .on_click("View", move |window, cx| {
+                                if let Some(workspace) = workspace_handle.upgrade() {
+                                    workspace.update(cx, |workspace, cx| {
+                                        workspace.reveal_panel::<AgentPanel>(window, cx);
+                                        if let Some(panel) = workspace.panel::<AgentPanel>(cx) {
+                                            panel.update(cx, |panel, cx| {
+                                                panel.load_agent_thread(
+                                                    agent.clone(),
+                                                    root_session_id.clone(),
+                                                    root_work_dirs.clone(),
+                                                    root_title.clone(),
+                                                    true,
+                                                    window,
+                                                    cx,
+                                                );
+                                            });
+                                        }
+                                        workspace.focus_panel::<AgentPanel>(window, cx);
+                                    });
+                                }
+                            })
+                            .autohide(),
+                            cx,
+                        );
+                    });
+                }
+            }
+            return;
+        }
+
         match settings.notify_when_agent_waiting {
             NotifyWhenAgentWaiting::PrimaryScreen => {
                 if let Some(primary) = cx.primary_display() {
