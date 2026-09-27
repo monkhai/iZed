@@ -896,6 +896,27 @@ unsafe impl Sync for IosWindow {}
 
 impl Drop for IosWindow {
     fn drop(&mut self) {
+        super::ffi::unregister_window(self as *const Self);
+
+        // UIKit may finish an in-flight touch or keyboard event after GPUI
+        // closes this window. Prevent the retained views from calling back
+        // through a pointer to the freed IosWindow.
+        unsafe {
+            if !self.view.is_null() {
+                #[allow(deprecated)]
+                {
+                    *(*self.view).get_mut_ivar::<*mut c_void>(GPUI_WINDOW_IVAR) = ptr::null_mut();
+                }
+            }
+            if !self.text_input_view.is_null() {
+                #[allow(deprecated)]
+                {
+                    *(*self.text_input_view).get_mut_ivar::<*mut c_void>(GPUI_WINDOW_IVAR) =
+                        ptr::null_mut();
+                }
+            }
+        }
+
         let _ = POINTER_INTERACTION.compare_exchange(
             self.pointer_interaction,
             ptr::null_mut(),

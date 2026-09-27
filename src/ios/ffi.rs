@@ -116,6 +116,34 @@ pub(crate) fn register_window(window: *const super::window::IosWindow) {
     }
 }
 
+/// Remove a window before its platform callbacks are dropped. UIKit can
+/// deliver scene activation callbacks after a GPUI window has closed (for
+/// example when dismissing Control Center), so the global list must never
+/// retain its raw pointer.
+pub(crate) fn unregister_window(window: *const super::window::IosWindow) {
+    if let Some(wrapper) = IOS_WINDOW_LIST.get() {
+        unsafe {
+            (*wrapper.0.get()).retain(|&registered| registered != window);
+        }
+    }
+}
+
+fn notify_windows_active(is_active: bool) {
+    let Some(wrapper) = IOS_WINDOW_LIST.get() else {
+        return;
+    };
+
+    // A GPUI activation callback may close another window. Snapshot the list
+    // so unregister_window can remove it without mutating a live iterator.
+    let windows = unsafe { (&*wrapper.0.get()).clone() };
+    for window_ptr in windows {
+        if window_ptr.is_null() || unsafe { !(&*wrapper.0.get()).contains(&window_ptr) } {
+            continue;
+        }
+        unsafe { (&*window_ptr).notify_active_status_change(is_active) };
+    }
+}
+
 /// Get the most recently created window pointer.
 ///
 /// Returns the pointer to the IosWindow that was most recently registered,
@@ -126,7 +154,8 @@ pub extern "C" fn gpui_ios_get_window() -> *mut c_void {
         unsafe {
             let windows = &*wrapper.0.get();
             if let Some(&window) = windows.last() {
-                log::info!("iZed iOS: Returning window {:p}", window);
+                // CADisplayLink calls this every frame; keep normal device logs quiet.
+                log::trace!("iZed iOS: Returning window {:p}", window);
                 return window as *mut c_void;
             }
         }
@@ -182,19 +211,7 @@ pub extern "C" fn gpui_ios_did_finish_launching(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
     log::info!("iZed iOS: Will enter foreground");
-
-    // Notify all windows that they're becoming active
-    if let Some(wrapper) = IOS_WINDOW_LIST.get() {
-        unsafe {
-            let windows = &*wrapper.0.get();
-            for &window_ptr in windows.iter() {
-                if !window_ptr.is_null() {
-                    let window = &*window_ptr;
-                    window.notify_active_status_change(true);
-                }
-            }
-        }
-    }
+    notify_windows_active(true);
 }
 
 /// Called when the iOS app did become active.
@@ -204,19 +221,7 @@ pub extern "C" fn gpui_ios_will_enter_foreground(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
     log::info!("iZed iOS: Did become active");
-
-    // App is now fully active - windows should be notified
-    if let Some(wrapper) = IOS_WINDOW_LIST.get() {
-        unsafe {
-            let windows = &*wrapper.0.get();
-            for &window_ptr in windows.iter() {
-                if !window_ptr.is_null() {
-                    let window = &*window_ptr;
-                    window.notify_active_status_change(true);
-                }
-            }
-        }
-    }
+    notify_windows_active(true);
 }
 
 /// Called when the iOS app will resign active.
@@ -226,19 +231,7 @@ pub extern "C" fn gpui_ios_did_become_active(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
     log::info!("iZed iOS: Will resign active");
-
-    // App is about to become inactive
-    if let Some(wrapper) = IOS_WINDOW_LIST.get() {
-        unsafe {
-            let windows = &*wrapper.0.get();
-            for &window_ptr in windows.iter() {
-                if !window_ptr.is_null() {
-                    let window = &*window_ptr;
-                    window.notify_active_status_change(false);
-                }
-            }
-        }
-    }
+    notify_windows_active(false);
 }
 
 /// Called when the iOS app did enter the background.
@@ -249,19 +242,7 @@ pub extern "C" fn gpui_ios_will_resign_active(_app_ptr: *mut c_void) {
 #[unsafe(no_mangle)]
 pub extern "C" fn gpui_ios_did_enter_background(_app_ptr: *mut c_void) {
     log::info!("iZed iOS: Did enter background");
-
-    // Notify windows they're no longer visible
-    if let Some(wrapper) = IOS_WINDOW_LIST.get() {
-        unsafe {
-            let windows = &*wrapper.0.get();
-            for &window_ptr in windows.iter() {
-                if !window_ptr.is_null() {
-                    let window = &*window_ptr;
-                    window.notify_active_status_change(false);
-                }
-            }
-        }
-    }
+    notify_windows_active(false);
 }
 
 /// Called when the iOS app will terminate.
