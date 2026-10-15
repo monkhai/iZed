@@ -9,6 +9,10 @@
 > [!WARNING]
 > **Work in progress.** This is an experimental, unofficial port built for real-device iteration. It is not ready for general use, and it is not affiliated with Zed Industries.
 
+A separate SSH-only iPhone app is in [`terminal-app/`](terminal-app/README.md).
+It shares the iOS platform, theme, fonts, and terminal engine, with its own app
+identity and Keychain credentials.
+
 <p align="center">
   <img src="docs/ized-ipad-workspace.png" width="900" alt="iZed on iPad with Rust editor, SSH project tree, terminal, and Agent Panel" />
   <br />

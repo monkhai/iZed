@@ -1,0 +1,45 @@
+[package]
+name = "ized-terminal"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "ized_terminal"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ized-platform = { path = "..", default-features = false, features = ["clipboard"] }
+assets = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "assets" }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "gpui", default-features = false }
+paths = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "paths" }
+release_channel = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "release_channel" }
+settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "settings" }
+terminal = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a" }
+theme = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme" }
+theme_settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme_settings" }
+util = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "util" }
+anyhow = "1"
+log = "0.4"
+smol = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+semver = "1"
+russh = { version = "0.63.3", default-features = false, features = ["ring", "rsa"] }
+rand = "0.10"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+objc2 = "0.6"
+zeroize = "1"
+rust-embed = { version = "8.11", features = ["debug-embed"] }
+
+[patch.crates-io]
+async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
+
+[profile.dev]
+opt-level = 1
+debug = 0
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+debug = 0

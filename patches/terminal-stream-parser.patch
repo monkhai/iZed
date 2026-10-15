@@ -1,0 +1,41 @@
+--- a/crates/terminal/src/terminal.rs
++++ b/crates/terminal/src/terminal.rs
+@@ -396,6 +396,7 @@
+             completion_tx: None,
+             term,
+             term_config: config,
++            pty_processor: Default::default(),
+             title_override: None,
+             events: VecDeque::with_capacity(10),
+             last_content: Default::default(),
+@@ -674,6 +675,7 @@
+                 completion_tx,
+                 term,
+                 term_config: config,
++            pty_processor: Default::default(),
+                 title_override: terminal_title_override,
+                 events: VecDeque::with_capacity(10), //Should never get this high.
+                 last_content: Default::default(),
+@@ -937,6 +939,8 @@
+     completion_tx: Option<Sender<Option<ExitStatus>>>,
+     term: Arc<FairMutex<Term<ZedListener>>>,
+     term_config: Config,
++    // Preserve ANSI and UTF-8 state across SSH packet boundaries.
++    pty_processor: alacritty_terminal::vte::ansi::Processor<alacritty_terminal::vte::ansi::StdSyncHandler>,
+     events: VecDeque<InternalEvent>,
+     /// This is only used for mouse mode cell change detection
+     last_mouse: Option<(AlacPoint, AlacDirection)>,
+@@ -1420,12 +1424,9 @@
+ 
+     /// Feed output from a real remote PTY without changing its line endings.
+     pub fn write_pty_output(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+-        let mut processor = alacritty_terminal::vte::ansi::Processor::<
+-            alacritty_terminal::vte::ansi::StdSyncHandler,
+-        >::new();
+         {
+             let mut term = self.term.lock();
+-            processor.advance(&mut *term, bytes);
++            self.pty_processor.advance(&mut *term, bytes);
+         }
+         cx.emit(Event::Wakeup);
+     }

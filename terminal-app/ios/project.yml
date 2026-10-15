@@ -1,0 +1,96 @@
+name: iZedTerminal
+options:
+  bundleIdPrefix: com.monkhai
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  iZedTerminalUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [TerminalUITests.swift]
+    dependencies:
+      - target: iZedTerminal
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.monkhai.ized-terminal.uitests
+        DEVELOPMENT_TEAM: GLLM38Y5T6
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+  iZedTerminal:
+    type: application
+    platform: iOS
+    sources:
+      - main.m
+      - MachinePicker.swift
+      - path: ../../app/fonts/JetBrainsMono-Regular.ttf
+        buildPhase: resources
+      - path: ../../app/fonts/JetBrainsMono-Medium.ttf
+        buildPhase: resources
+      - path: Assets.xcassets
+        buildPhase: resources
+      - path: ../../app/ios/LaunchScreen.storyboard
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.monkhai.ized-terminal
+        PRODUCT_NAME: iZedTerminal
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: "$(PROJECT_DIR)/TerminalBridge.h"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_TEAM: GLLM38Y5T6
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_FILE: Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_DEBUG_DYLIB: NO
+        DEAD_CODE_STRIPPING: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        GCC_PREPROCESSOR_DEFINITIONS: ["USE_GPUI_RUST=1", "$(inherited)"]
+        HEADER_SEARCH_PATHS: ["$(PROJECT_DIR)/../../app/ios"]
+        "TERMINAL_STATIC_LIB[sdk=iphoneos*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios/debug/libized_terminal.a"
+        "TERMINAL_STATIC_LIB[sdk=iphonesimulator*]": "$(PROJECT_DIR)/../target/aarch64-apple-ios-sim/debug/libized_terminal.a"
+        OTHER_LDFLAGS:
+          - "-force_load"
+          - "$(TERMINAL_STATIC_LIB)"
+          - "-lc++"
+          - "-lz"
+          - "-liconv"
+          - "-framework UIKit"
+          - "-framework Network"
+          - "-framework Metal"
+          - "-framework MetalKit"
+          - "-framework QuartzCore"
+          - "-framework CoreGraphics"
+          - "-framework CoreText"
+          - "-framework Security"
+          - "-framework SystemConfiguration"
+          - "-framework AudioToolbox"
+          - "-framework AVFoundation"
+          - "-framework CoreMedia"
+          - "-framework VideoToolbox"
+          - "-ObjC"
+    preBuildScripts:
+      - name: Build terminal Rust library
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+          export PATH="/Users/yohaiwiener/.cargo/bin:/opt/homebrew/bin:$PATH"
+          cd "$PROJECT_DIR/.."
+          if [ "$PLATFORM_NAME" = iphonesimulator ]; then
+            RUST_TARGET=aarch64-apple-ios-sim
+          else
+            RUST_TARGET=aarch64-apple-ios
+          fi
+          cargo build --lib --target "$RUST_TARGET" --offline
+        outputFiles: ["$(TERMINAL_STATIC_LIB)"]
+        basedOnDependencyAnalysis: false
+schemes:
+  iZedTerminal:
+    build:
+      targets:
+        iZedTerminal: all
+    test:
+      targets: [iZedTerminalUITests]
+      environmentVariables:
+        IZED_TEST_HOST: "$(IZED_TEST_HOST)"
