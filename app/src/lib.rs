@@ -1,7 +1,7 @@
 //! iZed's iPad host for Zed's remote workspace.
 //!
 //! The iOS app registers [`ized`] as its GPUI root view. The inherited
-//! Android demo remains available as a platform example through [`screens`].
+//! Android host opens the terminal UI milestone; the demo views remain in [`screens`].
 //! Build instructions for a physical iPad are in the repository README.
 
 // Link ized-platform so its symbols (jni helpers, platform, etc.) are available.
@@ -10,16 +10,21 @@ extern crate ized_platform;
 pub mod demos;
 pub mod screens;
 
+#[cfg(target_os = "android")]
+mod android_terminal;
+
 #[cfg(all(target_os = "ios", feature = "ized"))]
 mod ized;
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
-use gpui::{prelude::*, App, WindowOptions};
+use gpui::App;
+#[cfg(target_os = "ios")]
+use gpui::{prelude::*, WindowOptions};
 
 #[cfg(target_os = "android")]
 use gpui::Application;
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
+#[cfg(target_os = "ios")]
 use screens::Router;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -74,8 +79,8 @@ fn android_main(app: android_activity::AndroidApp) {
     // valid — solving the lifetime mismatch that previously caused
     // `default_prevented=false` on touch events and potential crashes.
     Application::with_platform(shared.into_rc()).run(|cx: &mut App| {
-        log::info!("Application::run callback — opening window with Router");
-        open_main_window(cx);
+        log::info!("Application::run callback — opening Android terminal UI");
+        android_terminal::open(cx);
     });
 
     // `Application::run` returns here only after the event loop exits
@@ -177,7 +182,7 @@ pub fn ios_main() {
 ///
 /// If the app was launched via a deeplink (e.g. `ized://video_player`),
 /// the router starts on the corresponding screen.
-#[cfg(any(target_os = "ios", target_os = "android"))]
+#[cfg(target_os = "ios")]
 fn open_main_window(cx: &mut App) {
     // Set up HTTP client so gpui::img() can fetch remote images (e.g. picsum.photos).
     // We build the reqwest client ourselves so we can skip TLS cert verification.

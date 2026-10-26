@@ -59,6 +59,25 @@ session per saved connection. Password authentication, key import, jump hosts,
 file transfers, and automatic session restoration are not implemented. iOS can
 suspend the app in the background, so session continuity is best-effort.
 
+## Android UI milestone
+
+The Android host in `app/src/android_terminal.rs` opens the shared terminal
+presentation from `src/presentation.rs`: session header, Machines landing screen,
+buttons, and accessory keys. It uses JetBrains Mono and Vercel Dark colors.
+The iOS application and its native services remain separate.
+
+This is explicitly a **local UI preview**, not an SSH terminal yet. Browse opens
+an input fixture; accessory keys record local events, Ctrl applies to the next
+key, and Esc/Back returns to Machines. The session menu can reset the fixture.
+No shell, machine discovery, Tailscale, credential storage, or remote connection
+is initialized. No success is simulated for those unavailable services.
+
+Build from the repository root with
+`RUSTUP_TOOLCHAIN=1.94.1 ./app/build.sh android --no-run`.
+Use the dedicated newer emulator for rendering checks; shader metadata and
+validation remain enabled. Physical devices and iOS runtime compatibility have
+not been validated by this milestone.
+
 ## Build
 
 Requirements: Xcode 16.1 or later, Go 1.27.1 or later, Rust, and an iPhone or
