@@ -1,4 +1,4 @@
-//! A cached roster imported from an authenticated Mac, not from another iOS app.
+//! A private cache of the embedded Tailscale node's peer roster.
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -15,19 +15,15 @@ pub struct Machine {
 pub struct Roster {
     pub machines: Vec<Machine>,
     #[serde(default)]
-    pub source: String,
-    #[serde(default)]
-    pub username: String,
-    #[serde(default)]
     pub updated_at: u64,
 }
 
 #[derive(Deserialize)]
 struct Status {
     #[serde(rename = "Self")]
-    own: Node,
+    own: Option<Node>,
     #[serde(rename = "Peer", default)]
-    peers: BTreeMap<String, Node>,
+    peers: Option<BTreeMap<String, Node>>,
 }
 #[derive(Deserialize)]
 struct Node {
@@ -53,10 +49,14 @@ impl Roster {
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default()
     }
-    pub fn from_status(json: &str, source: String, username: String) -> anyhow::Result<Self> {
+    pub fn from_status(json: &str) -> anyhow::Result<Self> {
         let status: Status = serde_json::from_str(json)?;
         let mut machines = Vec::new();
-        for node in std::iter::once(status.own).chain(status.peers.into_values()) {
+        for node in status
+            .own
+            .into_iter()
+            .chain(status.peers.unwrap_or_default().into_values())
+        {
             if ["ios", "android", "tvos"].contains(&node.os.to_lowercase().as_str()) {
                 continue;
             }
@@ -92,8 +92,6 @@ impl Roster {
         machines.dedup_by(|a, b| a.address == b.address);
         Ok(Self {
             machines,
-            source,
-            username,
             updated_at: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)?
                 .as_secs(),

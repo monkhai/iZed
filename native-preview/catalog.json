@@ -1,0 +1,258 @@
+[
+  {
+    "id": "machines",
+    "title": "Machines",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "signed-out",
+    "title": "Tailscale sign-in",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "empty",
+    "title": "Empty tailnet",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "refreshing",
+    "title": "Refreshing machines",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "roster-error",
+    "title": "Roster error",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "search-results",
+    "title": "Search results",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "search-empty",
+    "title": "No search results",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "connection",
+    "title": "Connection details",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "connection-advanced",
+    "title": "Launch command expanded",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "connection-invalid",
+    "title": "Username validation",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "connection-key-copied",
+    "title": "Public key copied",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "sign-out",
+    "title": "Sign-out confirmation",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
+    "id": "trust",
+    "title": "Verify host identity",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/TrustAlert.h",
+    "height": 700
+  },
+  {
+    "id": "trust-changed",
+    "title": "Host identity changed",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/TrustAlert.h",
+    "height": 700
+  },
+  {
+    "id": "search-field",
+    "title": "Search field",
+    "group": "UIKit components",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 140
+  },
+  {
+    "id": "picker-footer",
+    "title": "Device settings footer",
+    "group": "UIKit components",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 220
+  },
+  {
+    "id": "saved-row",
+    "title": "Recent connection row",
+    "group": "UIKit components",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 76
+  },
+  {
+    "id": "online-row",
+    "title": "Online machine row",
+    "group": "UIKit components",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 76
+  },
+  {
+    "id": "offline-row",
+    "title": "Offline machine row",
+    "group": "UIKit components",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 76
+  },
+  {
+    "id": "section-header",
+    "title": "Tailnet section heading",
+    "group": "UIKit components",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 44
+  },
+  {
+    "id": "landing",
+    "title": "Landing",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "terminal",
+    "title": "Connected terminal",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "session-menu",
+    "title": "Session controls",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "connecting",
+    "title": "Connecting",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "access-error",
+    "title": "SSH access error",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "disconnected",
+    "title": "Disconnected",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "empty-menu",
+    "title": "Empty session menu",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "session-header",
+    "title": "Session header",
+    "group": "GPUI components",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/presentation.rs",
+    "height": 80
+  },
+  {
+    "id": "landing-body",
+    "title": "Machines empty state",
+    "group": "GPUI components",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/presentation.rs",
+    "height": 250
+  },
+  {
+    "id": "key-strip",
+    "title": "Accessory keys",
+    "group": "GPUI components",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/presentation.rs",
+    "height": 80
+  },
+  {
+    "id": "key-strip-control",
+    "title": "Accessory keys \u00b7 control active",
+    "group": "GPUI components",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/presentation.rs",
+    "height": 80
+  },
+  {
+    "id": "button",
+    "title": "Terminal button",
+    "group": "GPUI components",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/presentation.rs",
+    "height": 100
+  }
+]

@@ -1,5 +1,4 @@
 import UIKit
-import Network
 
 private enum ZedStyle {
     static let background = UIColor(white: 10 / 255, alpha: 1)
@@ -12,6 +11,11 @@ private enum ZedStyle {
         UIFont(name: medium ? "JetBrainsMono-Medium" : "JetBrainsMono-Regular", size: size)
             ?? .monospacedSystemFont(ofSize: size, weight: medium ? .medium : .regular)
     }
+}
+
+private func defaultTailscaleDeviceName() -> String {
+    let name = UIDevice.current.name
+    return name.caseInsensitiveCompare("iPhone") == .orderedSame ? "iZed iPhone" : name
 }
 
 private struct Machine: Decodable {
@@ -37,8 +41,6 @@ private struct SavedHost: Decodable {
 }
 private struct Roster: Decodable {
     let machines: [Machine]
-    let source: String
-    let username: String
     let updated_at: UInt64
 }
 private struct PickerPayload: Decodable {
@@ -48,6 +50,7 @@ private struct PickerPayload: Decodable {
     let message: String
     let refreshing: Bool
     let has_session: Bool
+    let tailnet_ready: Bool
 }
 
 @_cdecl("terminal_machines")
@@ -68,9 +71,8 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
     private static var activationObserver: NSObjectProtocol?
     private var payload: PickerPayload
     private let search = UITextField()
+    private let deviceNameField = UITextField()
     private let note = UILabel()
-    private var checks: [String: NWConnection] = [:]
-    private var reachability: [String: Bool] = [:]
     private var query = ""
 
     init(_ payload: PickerPayload) { self.payload = payload; super.init(style: .plain) }
@@ -132,6 +134,22 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
         search.layer.borderColor = ZedStyle.border.cgColor
         search.autocorrectionType = .no
         search.autocapitalizationType = .none
+        deviceNameField.text = UserDefaults.standard.string(forKey: "ized-terminal.tailscale-device-name") ?? defaultTailscaleDeviceName()
+        deviceNameField.placeholder = "Name this iPhone in Tailscale"
+        deviceNameField.font = ZedStyle.mono(12)
+        deviceNameField.textColor = ZedStyle.text
+        deviceNameField.tintColor = ZedStyle.text
+        deviceNameField.backgroundColor = ZedStyle.surface
+        deviceNameField.layer.cornerRadius = 6
+        deviceNameField.layer.borderWidth = 1
+        deviceNameField.layer.borderColor = ZedStyle.border.cgColor
+        deviceNameField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 1))
+        deviceNameField.leftViewMode = .always
+        deviceNameField.autocorrectionType = .no
+        deviceNameField.autocapitalizationType = .words
+        deviceNameField.returnKeyType = .done
+        deviceNameField.delegate = self
+        deviceNameField.accessibilityIdentifier = "tailscale-device-name"
         search.clearButtonMode = .whileEditing
         search.returnKeyType = .done
         search.delegate = self
@@ -161,14 +179,12 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
         tableView.tableHeaderView = header
         tableView.tableFooterView = footer()
         updateNote()
-        checkSSH()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         if navigationController?.presentingViewController == nil {
             Self.current = nil
-            checks.values.forEach { $0.cancel() }
         }
     }
 
@@ -177,18 +193,19 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
         guard isViewLoaded else { return }
         updateNote()
         tableView.reloadData()
+        tableView.tableFooterView = footer()
         navigationItem.rightBarButtonItem?.isEnabled = !payload.refreshing
-        checkSSH()
     }
 
     private func updateNote() {
-        if payload.refreshing { note.text = "Refreshing through your paired Mac…" }
+        if payload.refreshing { note.text = "Refreshing Tailscale machines…" }
         else if !payload.message.isEmpty { note.text = payload.message }
-        else if payload.roster.machines.isEmpty { note.text = "Uses the Tailscale app already on your iPhone." }
+        else if !payload.tailnet_ready { note.text = "Connect to Tailscale to see your machines." }
+        else if payload.roster.machines.isEmpty { note.text = "No computers are available in this tailnet yet." }
         else {
             let age = max(0, Date().timeIntervalSince1970 - Double(payload.roster.updated_at))
             let time = age < 60 ? "just now" : age < 3600 ? "\(Int(age / 60))m ago" : "\(Int(age / 3600))h ago"
-            note.text = "Your Tailscale machines · synced \(time)\nUses your existing Tailscale connection"
+            note.text = "Your Tailscale machines · synced \(time)\nConnected through iZed Terminal"
         }
     }
 
@@ -227,7 +244,7 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
             cell.textLabel?.text = host.name
             cell.detailTextLabel?.text = host.address
             cell.imageView?.image = UIImage(systemName: "terminal")
-            if let machine = payload.roster.machines.first(where: { host.matches($0) }), reachability[machine.address] == true {
+            if let machine = payload.roster.machines.first(where: { host.matches($0) }), machine.online {
                 let dot = UIImageView(image: UIImage(systemName: "circle.fill"))
                 dot.tintColor = ZedStyle.green; dot.frame = CGRect(x: 0, y: 0, width: 7, height: 7); cell.accessoryView = dot
             }
@@ -235,13 +252,13 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
         } else {
             let machine = machines[indexPath.row]
             cell.textLabel?.text = machine.name
-            let ready = reachability[machine.address]
-            let status = ready == true ? "SSH ready" : ready == false ? "No SSH response" : "Checking SSH…"
+            let ready = machine.online
+            let status = ready ? "Online in Tailscale" : "Offline in Tailscale"
             cell.detailTextLabel?.text = "\(machine.os) · \(status)"
             cell.imageView?.image = UIImage(systemName: machine.os.lowercased() == "macos" ? (machine.name.lowercased().contains("macbook") ? "laptopcomputer" : "desktopcomputer") : "server.rack")
-            let dot = UIImageView(image: UIImage(systemName: ready == true ? "circle.fill" : "chevron.right"))
-            dot.tintColor = ready == true ? ZedStyle.green : ZedStyle.muted
-            dot.frame = CGRect(x: 0, y: 0, width: ready == true ? 7 : 10, height: ready == true ? 7 : 13)
+            let dot = UIImageView(image: UIImage(systemName: ready ? "circle.fill" : "chevron.right"))
+            dot.tintColor = ready ? ZedStyle.green : ZedStyle.muted
+            dot.frame = CGRect(x: 0, y: 0, width: ready ? 7 : 10, height: ready ? 7 : 13)
             cell.accessoryView = dot
             cell.accessibilityIdentifier = "machine-\(machine.address)"
             cell.accessibilityLabel = "\(machine.name), \(machine.os), \(status)"
@@ -253,12 +270,11 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
         if indexPath.section == 0 { connect(saved[indexPath.row]); return }
         let machine = machines[indexPath.row]
         if let host = payload.saved.first(where: { $0.matches(machine) }) { connect(host); return }
-        let detail = ConnectionEditor(machine: machine, username: payload.roster.username, publicKey: payload.public_key)
+        let detail = ConnectionEditor(machine: machine, publicKey: payload.public_key)
         navigationController?.pushViewController(detail, animated: true)
     }
 
     private func connect(_ host: SavedHost) {
-        checks.values.forEach { $0.cancel() }
         Self.current = nil
         // A fast SSH probe can finish during the dismissal animation. Submit
         // only once the terminal is again the stable presenting controller.
@@ -266,79 +282,95 @@ private final class MachinePicker: UITableViewController, UITextFieldDelegate {
             host.name.withCString { name in host.address.withCString { address in host.command.withCString { command in terminal_add_host(name, address, command) } } }
         }
     }
-    private func checkSSH() {
-        for machine in payload.roster.machines where checks[machine.address] == nil {
-            let connection = NWConnection(host: NWEndpoint.Host(machine.address), port: 22, using: .tcp)
-            checks[machine.address] = connection
-            connection.stateUpdateHandler = { [weak self, weak connection] state in
-                guard let self else { return }
-                let result: Bool?
-                switch state { case .ready: result = true; case .failed: result = false; default: result = nil }
-                guard let result else { return }
-                DispatchQueue.main.async {
-                    self.reachability[machine.address] = result
-                    self.tableView.reloadData()
-                }
-                connection?.cancel()
-            }
-            connection.start(queue: DispatchQueue.global(qos: .utility))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self, weak connection] in
-                guard let self, self.reachability[machine.address] == nil else { return }
-                self.reachability[machine.address] = false
-                connection?.cancel()
-                self.tableView.reloadData()
-            }
-        }
-    }
-
     private func footer() -> UIView {
-        let footer = UIView(frame: CGRect(x: 0, y: 0, width: 430, height: 150))
-        let add = UIButton(type: .system)
-        add.setTitle("＋  Add manually", for: .normal)
-        add.titleLabel?.font = ZedStyle.mono(12)
-        add.setTitleColor(ZedStyle.muted, for: .normal)
-        add.addTarget(self, action: #selector(manual), for: .touchUpInside)
-        add.accessibilityIdentifier = "add-manually"
-        add.translatesAutoresizingMaskIntoConstraints = false
-        footer.addSubview(add)
+        let footer = UIView(frame: CGRect(x: 0, y: 0, width: 430, height: payload.tailnet_ready ? 204 : 166))
+        if !deviceNameField.isFirstResponder {
+            deviceNameField.text = UserDefaults.standard.string(forKey: "ized-terminal.tailscale-device-name") ?? defaultTailscaleDeviceName()
+        }
+        deviceNameField.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(deviceNameField)
+        let connect = UIButton(type: .system)
+        let loginPending = payload.message == "Waiting for Tailscale sign-in…"
+        let title = payload.tailnet_ready ? "Save device name" : loginPending ? "Waiting for Tailscale…" : "Connect to Tailscale"
+        connect.setTitle(title, for: .normal)
+        connect.titleLabel?.font = ZedStyle.mono(12, medium: true)
+        connect.setTitleColor(ZedStyle.text, for: .normal)
+        connect.isEnabled = !payload.refreshing && !loginPending
+        connect.addTarget(self, action: payload.tailnet_ready ? #selector(saveDeviceName) : #selector(connectTailscale), for: .touchUpInside)
+        connect.accessibilityIdentifier = payload.tailnet_ready ? "save-tailscale-device-name" : "connect-tailscale"
+        connect.translatesAutoresizingMaskIntoConstraints = false
+        footer.addSubview(connect)
         let label = UILabel()
-        label.text = "Uses Tailscale on this iPhone."
+        label.text = payload.tailnet_ready ? "This name identifies iZed Terminal in your tailnet." : "Sign in once. iZed Terminal appears as its own device in your tailnet."
         label.font = ZedStyle.mono(10)
         label.textColor = ZedStyle.muted
         label.numberOfLines = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(label)
+        var signOut: UIButton?
+        if payload.tailnet_ready {
+            let button = UIButton(type: .system)
+            button.setTitle("Sign out of Tailscale", for: .normal)
+            button.titleLabel?.font = ZedStyle.mono(10)
+            button.setTitleColor(.systemRed, for: .normal)
+            button.addTarget(self, action: #selector(confirmSignOut), for: .touchUpInside)
+            button.accessibilityIdentifier = "sign-out-tailscale"
+            button.translatesAutoresizingMaskIntoConstraints = false
+            footer.addSubview(button)
+            signOut = button
+        }
         NSLayoutConstraint.activate([
-            add.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 18), add.topAnchor.constraint(equalTo: footer.topAnchor, constant: 12), add.heightAnchor.constraint(equalToConstant: 44),
-            label.leadingAnchor.constraint(equalTo: add.leadingAnchor), label.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -18), label.topAnchor.constraint(equalTo: add.bottomAnchor, constant: 20),
+            deviceNameField.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 18),
+            deviceNameField.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -18),
+            deviceNameField.topAnchor.constraint(equalTo: footer.topAnchor, constant: 8),
+            deviceNameField.heightAnchor.constraint(equalToConstant: 42),
+            connect.leadingAnchor.constraint(equalTo: footer.leadingAnchor, constant: 18), connect.topAnchor.constraint(equalTo: deviceNameField.bottomAnchor, constant: 4), connect.heightAnchor.constraint(equalToConstant: 44),
+            label.leadingAnchor.constraint(equalTo: connect.leadingAnchor), label.trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: -18), label.topAnchor.constraint(equalTo: connect.bottomAnchor, constant: 8),
         ])
+        if let signOut {
+            NSLayoutConstraint.activate([
+                signOut.leadingAnchor.constraint(equalTo: label.leadingAnchor),
+                signOut.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 4),
+                signOut.heightAnchor.constraint(equalToConstant: 30),
+            ])
+        }
         return footer
     }
-    @objc private func manual() { navigationController?.pushViewController(ConnectionEditor(machine: nil, username: payload.roster.username, publicKey: payload.public_key), animated: true) }
-    @objc private func refresh() { checks.values.forEach { $0.cancel() }; checks.removeAll(); reachability.removeAll(); checkSSH(); terminal_refresh_machines() }
+    @objc private func connectTailscale() { Task { await EmbeddedTailscale.shared.signIn(deviceName: deviceNameField.text ?? "") } }
+    @objc private func saveDeviceName() { deviceNameField.resignFirstResponder(); Task { await EmbeddedTailscale.shared.updateDeviceName(deviceNameField.text ?? "") } }
+    @objc private func confirmSignOut() {
+        let alert = UIAlertController(
+            title: "Sign out of Tailscale?",
+            message: "iZed Terminal will need to sign in again to reach your tailnet.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Sign Out", style: .destructive) { _ in
+            Task { await EmbeddedTailscale.shared.signOut() }
+        })
+        present(alert, animated: true)
+    }
+    @objc private func refresh() { terminal_refresh_machines() }
     @objc private func filter() { query = search.text ?? ""; tableView.reloadData() }
     func textFieldShouldReturn(_ textField: UITextField) -> Bool { textField.resignFirstResponder(); return true }
-    @objc private func close() { checks.values.forEach { $0.cancel() }; Self.current = nil; dismiss(animated: true) }
+    @objc private func close() { Self.current = nil; dismiss(animated: true) }
 }
 
 private final class ConnectionEditor: UIViewController {
-    let machine: Machine?
+    let machine: Machine
     let publicKey: String
     let username = UITextField()
-    let address = UITextField()
-    let name = UITextField()
     let command = UITextField()
     let error = UILabel()
-    init(machine: Machine?, username: String, publicKey: String) {
+    init(machine: Machine, publicKey: String) {
         self.machine = machine; self.publicKey = publicKey
         super.init(nibName: nil, bundle: nil)
-        self.username.text = username
     }
     required init?(coder: NSCoder) { fatalError() }
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = ZedStyle.background
-        title = machine == nil ? "Add connection" : "Connect"
+        title = "Connect"
         let scroll = UIScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.keyboardDismissMode = .interactive
         view.addSubview(scroll)
         let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 12; stack.translatesAutoresizingMaskIntoConstraints = false
@@ -358,17 +390,12 @@ private final class ConnectionEditor: UIViewController {
             field.heightAnchor.constraint(equalToConstant: 48).isActive = true; field.accessibilityIdentifier = id
             stack.addArrangedSubview(field)
         }
-        if let machine {
-            stack.addArrangedSubview(label(machine.name, 18, muted: false))
-            stack.addArrangedSubview(label("\(machine.os) · \(machine.hostname.isEmpty ? machine.address : machine.hostname)", 10))
-            stack.setCustomSpacing(30, after: stack.arrangedSubviews.last!)
-            stack.addArrangedSubview(label("SSH USERNAME"))
-            field(username, "Your account on this Mac", id: "ssh-username")
-            stack.addArrangedSubview(label("We’ll remember this for next time.", 10))
-        } else {
-            stack.addArrangedSubview(label("NAME")); field(name, "studio", id: "connection-name")
-            stack.addArrangedSubview(label("SSH ADDRESS")); field(address, "user@hostname:22", id: "connection-address")
-        }
+        stack.addArrangedSubview(label(machine.name, 18, muted: false))
+        stack.addArrangedSubview(label("\(machine.os) · \(machine.hostname.isEmpty ? machine.address : machine.hostname)", 10))
+        stack.setCustomSpacing(30, after: stack.arrangedSubviews.last!)
+        stack.addArrangedSubview(label("SSH USERNAME"))
+        field(username, "Your account on this machine", id: "ssh-username")
+        stack.addArrangedSubview(label("We’ll remember this for next time.", 10))
         let advanced = UIButton(type: .system)
         advanced.setTitle("Launch command (optional)", for: .normal); advanced.contentHorizontalAlignment = .left; advanced.titleLabel?.font = ZedStyle.mono(11); advanced.tintColor = ZedStyle.muted
         stack.addArrangedSubview(advanced)
@@ -388,18 +415,10 @@ private final class ConnectionEditor: UIViewController {
         stack.addArrangedSubview(key)
     }
     @objc private func connectNow() {
-        let target: String
-        let displayName: String
-        if let machine {
-            let user = (username.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !user.isEmpty && !user.contains("@") && user.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { error.text = "Enter your SSH username."; return }
-            target = "\(user)@\(machine.address.contains(":") ? "[\(machine.address)]" : machine.address)"
-            displayName = machine.name
-        } else {
-            target = (address.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard target.contains("@") else { error.text = "Use user@hostname, with an optional :port."; return }
-            displayName = (name.text ?? "").isEmpty ? target : name.text!
-        }
+        let user = (username.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !user.isEmpty && !user.contains("@") && user.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else { error.text = "Enter your SSH username."; return }
+        let target = "\(user)@\(machine.address.contains(":") ? "[\(machine.address)]" : machine.address)"
+        let displayName = machine.name
         let launch = command.text ?? ""
         view.endEditing(true)
         MachinePicker.current = nil

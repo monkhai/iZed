@@ -2,7 +2,23 @@ name: iZedTerminal
 options:
   bundleIdPrefix: com.monkhai
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "18.1"
+aggregateTargets:
+  TailscaleKitBuild:
+    type: aggregate
+    platform: iOS
+    buildScripts:
+      - name: Build embedded TailscaleKit
+        shell: /bin/bash
+        script: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$PATH"
+          FRAMEWORK="$PROJECT_DIR/../vendor/libtailscale/swift/build/Build/Products/Release-iphonefat/TailscaleKit.xcframework"
+          if [ ! -d "$FRAMEWORK" ]; then
+            make -C "$PROJECT_DIR/../vendor/libtailscale/swift" ios-fat
+          fi
+        outputFiles: ["$(PROJECT_DIR)/../vendor/libtailscale/swift/build/Build/Products/Release-iphonefat/TailscaleKit.xcframework"]
+        basedOnDependencyAnalysis: false
 targets:
   iZedTerminalUITests:
     type: bundle.ui-testing
@@ -24,6 +40,7 @@ targets:
     sources:
       - main.m
       - MachinePicker.swift
+      - EmbeddedTailscale.swift
       - path: ../../app/fonts/JetBrainsMono-Regular.ttf
         buildPhase: resources
       - path: ../../app/fonts/JetBrainsMono-Medium.ttf
@@ -32,6 +49,10 @@ targets:
         buildPhase: resources
       - path: ../../app/ios/LaunchScreen.storyboard
         buildPhase: resources
+    dependencies:
+      - target: TailscaleKitBuild
+      - framework: ../vendor/libtailscale/swift/build/Build/Products/Release-iphonefat/TailscaleKit.xcframework
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.monkhai.ized-terminal
@@ -75,7 +96,7 @@ targets:
         shell: /bin/bash
         script: |
           set -euo pipefail
-          export PATH="/Users/yohaiwiener/.cargo/bin:/opt/homebrew/bin:$PATH"
+          export PATH="${HOME}/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
           cd "$PROJECT_DIR/.."
           if [ "$PLATFORM_NAME" = iphonesimulator ]; then
             RUST_TARGET=aarch64-apple-ios-sim

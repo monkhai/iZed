@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 use terminal::RemoteTerminalChannels;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use zeroize::Zeroizing;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -63,6 +65,86 @@ impl Host {
     }
 }
 
+#[derive(Clone)]
+pub struct TailscaleProxy {
+    pub host: String,
+    pub port: u16,
+    pub password: Zeroizing<String>,
+}
+
+async fn tailscale_stream(proxy: &TailscaleProxy, host: &str, port: u16) -> Result<TcpStream> {
+    let mut stream = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
+
+    // TailscaleKit exposes a loopback SOCKS5 proxy for outbound tailnet TCP.
+    stream.write_all(&[5, 1, 2]).await?;
+    let mut method = [0; 2];
+    stream.read_exact(&mut method).await?;
+    anyhow::ensure!(method == [5, 2], "Tailscale proxy rejected authentication");
+
+    let username = b"tsnet";
+    let password = proxy.password.as_bytes();
+    anyhow::ensure!(
+        password.len() <= u8::MAX as usize,
+        "Invalid Tailscale proxy credential"
+    );
+    let mut auth = Vec::with_capacity(3 + password.len());
+    auth.extend_from_slice(&[1, username.len() as u8]);
+    auth.extend_from_slice(username);
+    auth.push(password.len() as u8);
+    auth.extend_from_slice(password);
+    stream.write_all(&auth).await?;
+    auth.fill(0);
+    let mut auth_result = [0; 2];
+    stream.read_exact(&mut auth_result).await?;
+    anyhow::ensure!(
+        auth_result == [1, 0],
+        "Tailscale proxy authentication failed"
+    );
+
+    let mut request = vec![5, 1, 0];
+    if let Ok(address) = host.parse::<std::net::Ipv4Addr>() {
+        request.push(1);
+        request.extend_from_slice(&address.octets());
+    } else if let Ok(address) = host.parse::<std::net::Ipv6Addr>() {
+        request.push(4);
+        request.extend_from_slice(&address.octets());
+    } else {
+        anyhow::ensure!(
+            host.len() <= u8::MAX as usize,
+            "Tailscale host name is too long"
+        );
+        request.extend_from_slice(&[3, host.len() as u8]);
+        request.extend_from_slice(host.as_bytes());
+    }
+    request.extend_from_slice(&port.to_be_bytes());
+    stream.write_all(&request).await?;
+
+    let mut reply = [0; 4];
+    stream.read_exact(&mut reply).await?;
+    anyhow::ensure!(
+        reply[0] == 5 && reply[1] == 0,
+        "Could not reach this machine over Tailscale"
+    );
+    match reply[3] {
+        1 => {
+            let mut address_and_port = [0; 6];
+            stream.read_exact(&mut address_and_port).await?;
+        }
+        3 => {
+            let mut length = [0; 1];
+            stream.read_exact(&mut length).await?;
+            let mut address_and_port = vec![0; length[0] as usize + 2];
+            stream.read_exact(&mut address_and_port).await?;
+        }
+        4 => {
+            let mut address_and_port = [0; 18];
+            stream.read_exact(&mut address_and_port).await?;
+        }
+        _ => anyhow::bail!("Tailscale returned an invalid proxy response"),
+    }
+    Ok(stream)
+}
+
 struct Probe(Arc<Mutex<Option<String>>>);
 impl client::Handler for Probe {
     type Error = russh::Error;
@@ -75,7 +157,7 @@ impl client::Handler for Probe {
     }
 }
 
-pub async fn probe(host: Host) -> Result<String> {
+pub async fn probe(host: Host, proxy: TailscaleProxy) -> Result<String> {
     smol::unblock(move || {
         let (_, hostname, port) = host.target()?;
         let identity = Arc::new(Mutex::new(None));
@@ -83,10 +165,13 @@ pub async fn probe(host: Host) -> Result<String> {
             .enable_all()
             .build()?;
         let result = runtime.block_on(async {
-            tokio::time::timeout(Duration::from_secs(12), async {
-                client::connect(
+            tokio::time::timeout(Duration::from_secs(20), async {
+                let stream = tailscale_stream(&proxy, &hostname, port)
+                    .await
+                    .map_err(std::io::Error::other)?;
+                client::connect_stream(
                     Arc::new(client::Config::default()),
-                    (hostname.as_str(), port),
+                    stream,
                     Probe(identity.clone()),
                 )
                 .await
@@ -124,35 +209,7 @@ pub struct Session {
     pub ended: smol::channel::Receiver<String>,
 }
 
-/// Refresh discovery through a host the user has already paired with this phone.
-pub async fn tailnet_status(host: Host, key: Zeroizing<String>) -> Result<String> {
-    smol::unblock(move || {
-        let (user, hostname, port) = host.target()?;
-        let fingerprint = host.fingerprint.context("Connect to the roster source once to verify its SSH identity")?;
-        let private_key = russh::keys::PrivateKey::from_openssh(key.as_str())?;
-        drop(key);
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-        runtime.block_on(async {
-            tokio::time::timeout(Duration::from_secs(20), async {
-                let mut handle = client::connect(Arc::new(client::Config::default()), (hostname.as_str(), port), Verify(fingerprint)).await?;
-                anyhow::ensure!(handle.authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(private_key), None)).await?.success(), "Authorize this phone’s SSH key on the roster source first");
-                let mut channel = handle.channel_open_session().await?;
-                channel.exec(true, "if [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then /Applications/Tailscale.app/Contents/MacOS/Tailscale status --json; else tailscale status --json; fi").await?;
-                let mut bytes = Vec::new();
-                while let Some(message) = channel.wait().await {
-                    match message {
-                        ChannelMsg::Data { data } => { anyhow::ensure!(bytes.len() + data.len() <= 2 * 1024 * 1024, "The device roster is too large"); bytes.extend_from_slice(&data); }
-                        ChannelMsg::ExitStatus { exit_status } if exit_status != 0 => bail!("Tailscale could not read the device roster on this host"),
-                        _ => {}
-                    }
-                }
-                Ok(String::from_utf8(bytes)?)
-            }).await.context("Roster refresh timed out")?
-        })
-    }).await
-}
-
-pub async fn open(host: Host, key: Zeroizing<String>) -> Result<Session> {
+pub async fn open(host: Host, key: Zeroizing<String>, proxy: TailscaleProxy) -> Result<Session> {
     let (input_tx, input_rx) = smol::channel::bounded::<Vec<u8>>(256);
     let (resize_tx, resize_rx) = smol::channel::unbounded();
     let (output_tx, output_rx) = smol::channel::bounded::<Vec<u8>>(256);
@@ -167,12 +224,15 @@ pub async fn open(host: Host, key: Zeroizing<String>) -> Result<Session> {
             drop(key);
             let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
             runtime.block_on(async {
-                let config = Arc::new(client::Config {
-                    keepalive_interval: Some(Duration::from_secs(15)),
-                    keepalive_max: 3,
-                    ..Default::default()
-                });
-                let mut handle = tokio::time::timeout(Duration::from_secs(15), client::connect(config, (hostname.as_str(), port), Verify(fingerprint))).await.context("SSH connection timed out")??;
+                let config = Arc::new(client::Config::default());
+                let mut handle = tokio::time::timeout(Duration::from_secs(20), async {
+                    let stream = tailscale_stream(&proxy, &hostname, port)
+                        .await
+                        .map_err(std::io::Error::other)?;
+                    client::connect_stream(config, stream, Verify(fingerprint)).await
+                })
+                .await
+                .context("SSH connection timed out")??;
                 let auth = tokio::time::timeout(Duration::from_secs(15), handle.authenticate_publickey(user, PrivateKeyWithHashAlg::new(Arc::new(private_key), None))).await.context("SSH authentication timed out")??;
                 if !auth.success() { bail!("Key not authorized. Add this phone’s public key to ~/.ssh/authorized_keys on your host."); }
                 let mut channel = handle.channel_open_session().await?;

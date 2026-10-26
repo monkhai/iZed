@@ -1,3 +1,9 @@
+#[path = "presentation.rs"]
+mod presentation;
+#[cfg(feature = "native-catalog")]
+#[path = "native_catalog.rs"]
+mod native_catalog;
+
 use crate::{
     ssh::{self, Host},
     tailnet::Roster,
@@ -8,7 +14,7 @@ use std::{
     borrow::Cow,
     ffi::{c_char, CStr, CString},
     path::PathBuf,
-    sync::Mutex,
+    sync::LazyLock,
     time::Duration,
 };
 use terminal::{terminal_settings::TerminalSettings, Terminal, TerminalBounds, TerminalBuilder};
@@ -18,6 +24,8 @@ use zeroize::Zeroizing;
 unsafe extern "C" {
     fn terminal_machines(json: *const c_char, present: bool);
     fn terminal_show_trust(address: *const c_char, fingerprint: *const c_char, changed: bool);
+    fn terminal_start_tailscale();
+    fn terminal_refresh_tailscale();
     fn terminal_load_key() -> *mut c_char;
     fn terminal_store_key(key: *const c_char) -> i32;
     fn terminal_free_key(key: *mut c_char);
@@ -28,12 +36,21 @@ enum NativeEvent {
     Add(Host),
     Trust(bool),
     Refresh,
+    TailscaleUpdate(String, ssh::TailscaleProxy),
+    TailscaleError(String),
 }
-static NATIVE_EVENTS: Mutex<Vec<NativeEvent>> = Mutex::new(Vec::new());
+static NATIVE_EVENTS: LazyLock<(
+    smol::channel::Sender<NativeEvent>,
+    smol::channel::Receiver<NativeEvent>,
+)> = LazyLock::new(smol::channel::unbounded);
+
+fn send_native_event(event: NativeEvent) {
+    let _ = NATIVE_EVENTS.0.try_send(event);
+}
 
 #[no_mangle]
 extern "C" fn terminal_refresh_machines() {
-    NATIVE_EVENTS.lock().unwrap().push(NativeEvent::Refresh);
+    send_native_event(NativeEvent::Refresh);
 }
 
 #[no_mangle]
@@ -51,7 +68,7 @@ unsafe extern "C" fn terminal_add_host(
     };
     let address = string(address);
     let name = string(name);
-    NATIVE_EVENTS.lock().unwrap().push(NativeEvent::Add(Host {
+    send_native_event(NativeEvent::Add(Host {
         name: if name.is_empty() {
             address.clone()
         } else {
@@ -65,10 +82,37 @@ unsafe extern "C" fn terminal_add_host(
 
 #[no_mangle]
 extern "C" fn terminal_trust_host(trust: bool) {
-    NATIVE_EVENTS
-        .lock()
-        .unwrap()
-        .push(NativeEvent::Trust(trust));
+    send_native_event(NativeEvent::Trust(trust));
+}
+
+#[no_mangle]
+unsafe extern "C" fn terminal_update_tailnet(
+    status_json: *const c_char,
+    proxy_host: *const c_char,
+    proxy_port: u16,
+    proxy_credential: *const c_char,
+    error: *const c_char,
+) {
+    let string = |pointer: *const c_char| {
+        if pointer.is_null() {
+            String::new()
+        } else {
+            CStr::from_ptr(pointer).to_string_lossy().into_owned()
+        }
+    };
+    let error = string(error);
+    if !error.is_empty() {
+        send_native_event(NativeEvent::TailscaleError(error));
+        return;
+    }
+    send_native_event(NativeEvent::TailscaleUpdate(
+        string(status_json),
+        ssh::TailscaleProxy {
+            host: string(proxy_host),
+            port: proxy_port,
+            password: Zeroizing::new(string(proxy_credential)),
+        },
+    ));
 }
 
 fn private_key() -> anyhow::Result<Zeroizing<String>> {
@@ -119,6 +163,8 @@ impl Drop for Session {
 }
 
 struct PhoneTerminal {
+    #[cfg(feature = "native-catalog")]
+    preview: bool,
     hosts: Vec<Host>,
     sessions: Vec<Session>,
     active: Option<usize>,
@@ -135,6 +181,8 @@ struct PhoneTerminal {
     roster: Roster,
     refreshing: bool,
     roster_message: String,
+    tailnet_ready: bool,
+    tailscale_proxy: Option<ssh::TailscaleProxy>,
 }
 
 impl PhoneTerminal {
@@ -156,59 +204,82 @@ impl PhoneTerminal {
         )
         .ok();
         // UIKit alerts return outside GPUI's entity leases. Drain them on our executor.
-        cx.spawn(async move |this, cx| loop {
-            smol::Timer::after(Duration::from_millis(50)).await;
-            let events = std::mem::take(&mut *NATIVE_EVENTS.lock().unwrap());
-            if events.is_empty() {
-                if this.upgrade().is_none() {
-                    break;
-                }
-                continue;
-            }
-            if this
-                .update(cx, |this, cx| {
-                    for event in events {
-                        match event {
-                            NativeEvent::Refresh => this.refresh_roster(cx),
-                            NativeEvent::Add(host) => {
-                                if let Err(error) = host.target() {
-                                    this.message = error.to_string();
-                                    cx.notify();
-                                    continue;
+        let events = NATIVE_EVENTS.1.clone();
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = events.recv().await {
+                if this
+                    .update(cx, |this, cx| match event {
+                        NativeEvent::Refresh => this.refresh_roster(cx),
+                        NativeEvent::TailscaleUpdate(status, proxy) => {
+                            match Roster::from_status(&status) {
+                                Ok(roster) => {
+                                    this.roster = roster;
+                                    this.tailnet_ready = true;
+                                    this.tailscale_proxy = Some(proxy);
+                                    this.refreshing = false;
+                                    this.roster_message.clear();
+                                    if let Err(error) = this.roster.save() {
+                                        this.roster_message = error.to_string();
+                                    }
                                 }
-                                if let Some(index) = this.hosts.iter().position(|h| {
-                                    h.address == host.address && h.command == host.command
-                                }) {
-                                    this.connect(index, cx);
-                                } else {
-                                    this.hosts.push(host);
-                                    this.save();
-                                    this.connect(this.hosts.len() - 1, cx);
+                                Err(error) => {
+                                    this.refreshing = false;
+                                    this.roster_message =
+                                        format!("Could not read Tailscale machines: {error}");
                                 }
                             }
-                            NativeEvent::Trust(trust) => {
-                                if let Some((index, fingerprint)) = this.pending.take() {
-                                    if trust {
-                                        this.hosts[index].fingerprint = Some(fingerprint);
-                                        this.save();
-                                        this.open_session(index, cx);
-                                    } else {
-                                        this.busy = false;
-                                        this.message = "Connection cancelled".into();
-                                        cx.notify();
-                                    }
+                            this.picker(false);
+                            cx.notify();
+                        }
+                        NativeEvent::TailscaleError(error) => {
+                            this.refreshing = false;
+                            this.tailnet_ready = false;
+                            this.tailscale_proxy = None;
+                            this.roster_message = error;
+                            this.picker(false);
+                            cx.notify();
+                        }
+                        NativeEvent::Add(host) => {
+                            if let Err(error) = host.target() {
+                                this.message = error.to_string();
+                                cx.notify();
+                                return;
+                            }
+                            if let Some(index) = this.hosts.iter().position(|h| {
+                                h.address == host.address && h.command == host.command
+                            }) {
+                                this.connect(index, cx);
+                            } else {
+                                this.hosts.push(host);
+                                this.save();
+                                this.connect(this.hosts.len() - 1, cx);
+                            }
+                        }
+                        NativeEvent::Trust(trust) => {
+                            if let Some((index, fingerprint)) = this.pending.take() {
+                                if trust {
+                                    this.hosts[index].fingerprint = Some(fingerprint);
+                                    this.save();
+                                    this.open_session(index, cx);
+                                } else {
+                                    this.busy = false;
+                                    this.message = "Connection cancelled".into();
+                                    cx.notify();
                                 }
                             }
                         }
-                    }
-                })
-                .is_err()
-            {
-                break;
+                    })
+                    .is_err()
+                {
+                    break;
+                }
             }
         })
         .detach();
+        unsafe { terminal_start_tailscale() };
         Self {
+            #[cfg(feature = "native-catalog")]
+            preview: false,
             hosts: std::fs::read(hosts_path())
                 .ok()
                 .and_then(|b| serde_json::from_slice(&b).ok())
@@ -227,11 +298,15 @@ impl PhoneTerminal {
             repeat_generation: 0,
             roster: Roster::load(),
             refreshing: false,
-            roster_message: String::new(),
+            roster_message: "Sign in to Tailscale to see your machines.".into(),
+            tailnet_ready: false,
+            tailscale_proxy: None,
         }
     }
 
     fn save(&mut self) {
+        #[cfg(feature = "native-catalog")]
+        if self.preview { return; }
         let result = (|| -> anyhow::Result<()> {
             let path = hosts_path();
             std::fs::create_dir_all(path.parent().unwrap())?;
@@ -250,6 +325,7 @@ impl PhoneTerminal {
             "roster": self.roster, "saved": self.hosts, "public_key": self.public_key,
             "refreshing": self.refreshing, "message": self.roster_message,
             "has_session": self.active.is_some(),
+            "tailnet_ready": self.tailnet_ready,
         });
         if let Ok(json) = CString::new(payload.to_string()) {
             unsafe {
@@ -262,54 +338,22 @@ impl PhoneTerminal {
         if self.refreshing {
             return;
         }
-        let host = self
-            .hosts
-            .iter()
-            .find(|host| host.address == self.roster.source && host.fingerprint.is_some())
-            .cloned();
-        let Some(host) = host else {
-            self.roster_message = "Connect to your Studio once to enable roster refresh.".into();
-            self.picker(false);
-            return;
-        };
-        let key = match private_key() {
-            Ok(key) => key,
-            Err(error) => {
-                self.roster_message = error.to_string();
-                self.picker(false);
-                return;
-            }
-        };
         self.refreshing = true;
-        self.roster_message.clear();
+        self.roster_message = "Refreshing Tailscale machines…".into();
         self.picker(false);
-        let source = self.roster.source.clone();
-        let username = self.roster.username.clone();
-        cx.spawn(async move |this, cx| {
-            let result = ssh::tailnet_status(host, key)
-                .await
-                .and_then(|json| Roster::from_status(&json, source, username));
-            this.update(cx, |this, cx| {
-                this.refreshing = false;
-                match result {
-                    Ok(roster) => {
-                        this.roster = roster;
-                        if let Err(error) = this.roster.save() {
-                            this.roster_message = error.to_string();
-                        }
-                    }
-                    Err(error) => this.roster_message = format!("{error:#}"),
-                }
-                this.picker(false);
-                cx.notify();
-            })
-            .ok();
-        })
-        .detach();
+        unsafe { terminal_refresh_tailscale() };
+        cx.notify();
     }
 
     fn connect(&mut self, index: usize, cx: &mut Context<Self>) {
+        #[cfg(feature = "native-catalog")]
+        if self.preview { native_catalog::connect(self, index, cx); return; }
         if self.busy {
+            return;
+        }
+        if !self.tailnet_ready || self.tailscale_proxy.is_none() {
+            self.message = "Connect to Tailscale before opening a machine.".into();
+            cx.notify();
             return;
         }
         if let Some(session) = self
@@ -329,8 +373,9 @@ impl PhoneTerminal {
         self.message = "Checking host identity…".into();
         cx.notify();
         let host = self.hosts[index].clone();
+        let proxy = self.tailscale_proxy.clone().unwrap();
         cx.spawn(async move |this, cx| {
-            let result = ssh::probe(host).await;
+            let result = ssh::probe(host, proxy).await;
             this.update(cx, |this, cx| {
                 match result {
                     Ok(fingerprint) => {
@@ -375,8 +420,14 @@ impl PhoneTerminal {
             }
         };
         let host = self.hosts[index].clone();
+        let Some(proxy) = self.tailscale_proxy.clone() else {
+            self.message = "Connect to Tailscale before opening a machine.".into();
+            self.busy = false;
+            cx.notify();
+            return;
+        };
         cx.spawn(async move |this, cx| {
-            let result = ssh::open(host, key).await;
+            let result = ssh::open(host, key, proxy).await;
             let mut ended = None;
             this.update(cx, |this, cx| {
                 this.busy = false;
@@ -415,9 +466,6 @@ impl PhoneTerminal {
                                 this.active = Some(slot);
                                 this.message.clear();
                                 ized_platform::show_keyboard();
-                                if this.hosts[index].address == this.roster.source {
-                                    this.refresh_roster(cx);
-                                }
                             }
                             Err(error) => this.message = error.to_string(),
                         }
@@ -508,19 +556,16 @@ impl PhoneTerminal {
     }
 
     fn button(&self, id: &'static str, label: &'static str, cx: &App) -> Stateful<Div> {
-        div()
-            .id(id)
-            .flex()
-            .items_center()
-            .justify_center()
-            .h(px(44.))
-            .min_w(px(42.))
-            .px(px(10.))
-            .rounded(px(5.))
-            .text_size(px(14.))
-            .text_color(cx.theme().colors().text)
-            .active(|s| s.bg(cx.theme().colors().element_selected))
-            .child(label)
+        let colors = cx.theme().colors();
+        presentation::button(id, label, presentation::Palette {
+            text: colors.text,
+            muted: colors.text_muted,
+            surface: colors.tab_bar_background,
+            border: colors.border,
+            green: colors.terminal_ansi_green,
+            element_background: colors.element_background,
+            element_selected: colors.element_selected,
+        })
     }
 }
 
@@ -534,6 +579,11 @@ impl Render for PhoneTerminal {
         let text = colors.text;
         let muted = colors.text_muted;
         let green = colors.terminal_ansi_green;
+        let palette = presentation::Palette {
+            text, muted, surface, border, green,
+            element_background: colors.element_background,
+            element_selected: colors.element_selected,
+        };
         let (top, bottom, left, right) = ized_platform::safe_area_insets();
         let keyboard = ized_platform::keyboard_height();
         let active = self.active.map(|i| &self.sessions[i]);
@@ -588,43 +638,16 @@ impl Render for PhoneTerminal {
                 }
                 cx.stop_propagation();
             }))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .flex_shrink_0()
-                    .h(px(52.))
-                    .px(px(12.))
-                    .bg(surface)
-                    .border_b_1()
-                    .border_color(border)
-                    .child(
-                        div()
-                            .id("session-menu")
-                            .flex()
-                            .items_center()
-                            .gap(px(9.))
-                            .h_full()
-                            .px(px(4.))
-                            .child(div().size(px(7.)).rounded_full().bg(if connected {
-                                green
-                            } else {
-                                muted
-                            }))
-                            .child(name)
-                            .child(div().text_color(muted).child("⌄"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.menu = !this.menu;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        self.button("add-connection", "+", cx)
-                            .text_size(px(24.))
-                            .on_click(cx.listener(|this, _, _, _| this.picker(true))),
-                    ),
-            );
+            .child(presentation::session_header(
+                name,
+                connected,
+                palette,
+                cx.listener(|this, _, _, cx| {
+                    this.menu = !this.menu;
+                    cx.notify();
+                }),
+                cx.listener(|this, _, _, _| this.picker(true)),
+            ));
 
         if let Some(terminal) = self.terminal() {
             let canvas_terminal = terminal.clone();
@@ -737,29 +760,10 @@ impl Render for PhoneTerminal {
                     ),
             );
         } else {
-            content = content.child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .px(px(22.))
-                    .py(px(26.))
-                    .gap(px(18.))
-                    .child(div().text_size(px(18.)).child("Machines"))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(muted)
-                            .child("Choose a computer on your tailnet."),
-                    )
-                    .child(
-                        self.button("browse-machines", "Browse machines  →", cx)
-                            .bg(colors.element_background)
-                            .border_1()
-                            .border_color(border)
-                            .on_click(cx.listener(|this, _, _, _| this.picker(true))),
-                    ),
-            );
+            content = content.child(presentation::machines_empty_state(
+                palette,
+                cx.listener(|this, _, _, _| this.picker(true)),
+            ));
         }
 
         if !self.message.is_empty() {
@@ -777,47 +781,18 @@ impl Render for PhoneTerminal {
         }
 
         if self.active.is_some() {
-            let mut strip = div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(2.))
-                .flex_shrink_0()
-                .px(px(6.))
-                .py(px(5.))
-                .bg(surface)
-                .border_t_1()
-                .border_color(border);
-            for (id, label, key) in [
-                ("escape", "esc", "escape"),
-                ("tab", "tab", "tab"),
-                ("control", "ctrl", "control"),
-                ("left", "←", "left"),
-                ("down", "↓", "down"),
-                ("up", "↑", "up"),
-                ("right", "→", "right"),
-            ] {
-                strip = strip.child(
-                    self.button(id, label, cx)
-                        .flex_1()
-                        .min_w_0()
-                        .when(key == "control" && self.control, |el| {
-                            el.bg(colors.element_selected).text_color(green)
-                        })
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, _, _, cx| {
-                                if key == "control" {
-                                    this.control = !this.control;
-                                    cx.notify();
-                                } else {
-                                    this.start_key(key, cx);
-                                }
-                            }),
-                        ),
-                );
-            }
-            content = content.child(strip);
+            content = content.child(presentation::key_strip(
+                palette,
+                self.control,
+                cx.listener(|this, key: &&'static str, _, cx| {
+                    if *key == "control" {
+                        this.control = !this.control;
+                        cx.notify();
+                    } else {
+                        this.start_key(*key, cx);
+                    }
+                }),
+            ));
         }
 
         if self.menu {
@@ -1114,6 +1089,11 @@ pub fn open(cx: &mut App) {
     .unwrap();
     theme_settings::reload_theme(cx);
     release_channel::init(semver::Version::new(0, 1, 0), cx);
+    #[cfg(feature = "native-catalog")]
+    if std::env::var("IZED_NATIVE_CATALOG").as_deref() == Ok("1") {
+        native_catalog::open(cx);
+        return;
+    }
     cx.open_window(WindowOptions::default(), |_, cx| {
         cx.new(|cx| {
             let mut terminal = PhoneTerminal::new(cx);

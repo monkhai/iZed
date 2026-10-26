@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-24",
+  "source": "terminal-app/ios/MachinePicker.swift",
+  "source_sha256": "f2bab2972dd9ffe5ca6470af9064cdedfee2e4e195db5413a2819825eb8deb69",
+  "framework_revision": "86b7c45922947c117c12bf685a40b687c78b36ba",
+  "runtime_versions": {
+    "mio-uikit-web": "1.0.5",
+    "mio-foundation-web": "1.0.10"
+  },
+  "source_usage": {
+    "UITableViewController": [
+      69
+    ],
+    "UINavigationBarAppearance": [
+      114
+    ],
+    "leadingAnchor": [
+      171,
+      175,
+      323,
+      327,
+      328,
+      332,
+      379,
+      380
+    ],
+    "NSLayoutConstraint": [
+      170,
+      322,
+      331,
+      378
+    ],
+    "UIStackView": [
+      376
+    ],
+    "safeAreaLayoutGuide": [
+      379
+    ],
+    "keyboardLayoutGuide": [
+      379
+    ],
+    "UIAction": [
+      404,
+      414
+    ],
+    "systemName": [
+      122,
+      158,
+      246,
+      248,
+      258,
+      259
+    ]
+  },
+  "transpile_exit_code": 127,
+  "official_github_releases": {
+    "miolabs/swift": [],
+    "miolabs/MIOFramework": []
+  },
+  "runtime_checks_passed": 1,
+  "runtime_checks_total": 10
+}

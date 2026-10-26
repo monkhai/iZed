@@ -8,6 +8,9 @@ publish = false
 name = "ized_terminal"
 crate-type = ["staticlib", "rlib"]
 
+[features]
+native-catalog = []
+
 [dependencies]
 ized-platform = { path = "..", default-features = false, features = ["clipboard"] }
 assets = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "assets" }

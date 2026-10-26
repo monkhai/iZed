@@ -1,6 +1,7 @@
 // Share iZed's scene lifecycle and GPUI bridge; keep this app's identity separate.
 #include "../../app/ios/main.m"
 #import <Security/Security.h>
+#import "TrustAlert.h"
 
 extern void terminal_add_host(const char *, const char *, const char *);
 extern void terminal_trust_host(bool);
@@ -40,13 +41,9 @@ void terminal_show_trust(const char *address, const char *fingerprint, bool chan
     NSString *host = [NSString stringWithUTF8String:address];
     NSString *identity = [NSString stringWithUTF8String:fingerprint];
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *message = [NSString stringWithFormat:@"%@\n\n%@\n\nCompare this fingerprint with your host before trusting it.", host, identity];
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:changed ? @"Host identity changed" : @"Verify host identity"
-            message:message preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { terminal_trust_host(false); }]];
-        [alert addAction:[UIAlertAction actionWithTitle:changed ? @"Trust new identity" : @"Trust and connect"
-            style:changed ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault handler:^(UIAlertAction *action) { terminal_trust_host(true); }]];
-        alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        UIAlertController *alert = TerminalMakeTrustAlert(host, identity, changed, ^(BOOL accepted) {
+            terminal_trust_host(accepted);
+        });
         terminalPresentTrust(alert, 0);
     });
 }

@@ -1,0 +1,296 @@
+{
+  "result": "passed",
+  "processID": 57258,
+  "entries": [
+    {
+      "id": "machines",
+      "renderer": "UIKit",
+      "surface": 780,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "signed-out",
+      "renderer": "UIKit",
+      "surface": 788,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "empty",
+      "renderer": "UIKit",
+      "surface": 796,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "refreshing",
+      "renderer": "UIKit",
+      "surface": 315,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "roster-error",
+      "renderer": "UIKit",
+      "surface": 741,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "search-results",
+      "renderer": "UIKit",
+      "surface": 777,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "search-empty",
+      "renderer": "UIKit",
+      "surface": 802,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "connection",
+      "renderer": "UIKit",
+      "surface": 132,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "connection-advanced",
+      "renderer": "UIKit",
+      "surface": 803,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "connection-invalid",
+      "renderer": "UIKit",
+      "surface": 808,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "connection-key-copied",
+      "renderer": "UIKit",
+      "surface": 812,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "sign-out",
+      "renderer": "UIKit",
+      "surface": 814,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "trust",
+      "renderer": "UIKit",
+      "surface": 820,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "trust-changed",
+      "renderer": "UIKit",
+      "surface": 826,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "search-field",
+      "renderer": "UIKit",
+      "surface": 827,
+      "size": [
+        780,
+        280
+      ]
+    },
+    {
+      "id": "picker-footer",
+      "renderer": "UIKit",
+      "surface": 837,
+      "size": [
+        780,
+        440
+      ]
+    },
+    {
+      "id": "saved-row",
+      "renderer": "UIKit",
+      "surface": 848,
+      "size": [
+        780,
+        152
+      ]
+    },
+    {
+      "id": "online-row",
+      "renderer": "UIKit",
+      "surface": 850,
+      "size": [
+        780,
+        152
+      ]
+    },
+    {
+      "id": "offline-row",
+      "renderer": "UIKit",
+      "surface": 854,
+      "size": [
+        780,
+        152
+      ]
+    },
+    {
+      "id": "section-header",
+      "renderer": "UIKit",
+      "surface": 861,
+      "size": [
+        780,
+        88
+      ]
+    },
+    {
+      "id": "landing",
+      "renderer": "GPUI",
+      "surface": 886,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "terminal",
+      "renderer": "GPUI",
+      "surface": 903,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "session-menu",
+      "renderer": "GPUI",
+      "surface": 907,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "connecting",
+      "renderer": "GPUI",
+      "surface": 921,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "access-error",
+      "renderer": "GPUI",
+      "surface": 926,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "disconnected",
+      "renderer": "GPUI",
+      "surface": 890,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "empty-menu",
+      "renderer": "GPUI",
+      "surface": 894,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "session-header",
+      "renderer": "GPUI",
+      "surface": 869,
+      "size": [
+        780,
+        160
+      ]
+    },
+    {
+      "id": "landing-body",
+      "renderer": "GPUI",
+      "surface": 904,
+      "size": [
+        780,
+        500
+      ]
+    },
+    {
+      "id": "key-strip",
+      "renderer": "GPUI",
+      "surface": 901,
+      "size": [
+        780,
+        160
+      ]
+    },
+    {
+      "id": "key-strip-control",
+      "renderer": "GPUI",
+      "surface": 887,
+      "size": [
+        780,
+        160
+      ]
+    },
+    {
+      "id": "button",
+      "renderer": "GPUI",
+      "surface": 965,
+      "size": [
+        780,
+        200
+      ]
+    }
+  ],
+  "nativeResizeChecks": 4,
+  "invalidBoundsRejected": true
+}
