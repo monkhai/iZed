@@ -124,6 +124,7 @@ pub fn key_strip(
         ("down", "↓", "down"),
         ("up", "↑", "up"),
         ("right", "→", "right"),
+        ("terminal-more", "…", "more"),
     ] {
         let on_key = on_key.clone();
         strip = strip.child(

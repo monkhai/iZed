@@ -118,11 +118,14 @@ python tests/ssh_fixture.py --key phone.pub --events /tmp/ssh-events.jsonl
 
 For the live iOS tests, separately forward the fixture machine's Tailscale port 22
 to this loopback listener on port 22222. Run Xcode tests with
-`IZED_TEST_HOST=smoke@FIXTURE_TAILSCALE_IP` (port 22). The tests use the normal
+`IZED_TEST_HOST=smoke@FIXTURE_TAILSCALE_IP` (port 22) and
+`IZED_TEST_FINGERPRINT=SHA256:...` set to the independently observed fixture
+fingerprint. The tests use the normal
 machine picker after live Tailscale discovery and isolate saved hosts with
 `IZED_PICKER_TEST`; they do not use the automatic smoke-test connection.
 Show the simulator software keyboard before the keyboard-layout test. Start a
 fresh fixture for the host-verification tests and verify its printed fingerprint
 before allowing trust. Review fixture events, XCTest results and screenshots.
+Run only one platform simulator at a time to avoid unnecessary contention.
 Stop the fixture and forwarding helper afterward; saved Tailscale node state can
 be retained for later runs.

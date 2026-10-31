@@ -34,9 +34,19 @@ unsafe extern "C" fn terminal_catalog_select(id: *const c_char) {
 fn fixture(id: &str, cx: &mut Context<PhoneTerminal>) -> PhoneTerminal {
     let has_terminal = matches!(
         id,
-        "terminal" | "session-menu" | "disconnected" | "access-error" | "connecting"
+        "terminal"
+            | "session-menu"
+            | "terminal-tools"
+            | "disconnected"
+            | "access-error"
+            | "connecting"
     );
-    let hosts = if id == "empty-menu" || id == "landing" {
+    let hosts = if id == "session-menu" {
+        [("Studio Mac", "demo@100.64.0.10"), ("Build server", "build@100.64.0.12"),
+         ("Dev box", "dev@100.64.0.14"), ("Saved Mac", "demo@100.64.0.16")]
+            .into_iter().map(|(name, address)| Host { name: name.into(), address: address.into(),
+                command: String::new(), fingerprint: None }).collect()
+    } else if id == "empty-menu" || id == "landing" {
         vec![]
     } else {
         vec![Host {
@@ -48,7 +58,9 @@ fn fixture(id: &str, cx: &mut Context<PhoneTerminal>) -> PhoneTerminal {
     };
     let mut state = PhoneTerminal {
         preview: true, hosts, sessions: vec![], active: None, focus: cx.focus_handle(),
-        menu: matches!(id, "session-menu" | "empty-menu"), control: false,
+        menu: matches!(id, "session-menu" | "empty-menu"),
+        menu_motion: MenuMotion { progress: if matches!(id, "session-menu" | "empty-menu") { 1. } else { 0. }, ..Default::default() },
+        tools_menu: id == "terminal-tools", tools_notice: None, control: false,
         busy: id == "connecting",
         message: match id {
             "connecting" => "Connecting…",
@@ -66,8 +78,14 @@ fn fixture(id: &str, cx: &mut Context<PhoneTerminal>) -> PhoneTerminal {
     if has_terminal {
         connect(&mut state, 0, cx);
     }
+    if id == "session-menu" {
+        connect(&mut state, 1, cx);
+        connect(&mut state, 2, cx);
+        state.active = Some(0);
+    }
     state.busy = id == "connecting";
     state.menu = matches!(id, "session-menu" | "empty-menu");
+    state.tools_menu = id == "terminal-tools";
     state.message = match id {
         "connecting" => "Connecting…",
         "access-error" => "Permission denied (publickey). Authorize this phone’s key on the host.",
@@ -76,7 +94,7 @@ fn fixture(id: &str, cx: &mut Context<PhoneTerminal>) -> PhoneTerminal {
     }
     .into();
     if let Some(session) = state.sessions.first_mut() {
-        session.connected = matches!(id, "terminal" | "session-menu");
+        session.connected = matches!(id, "terminal" | "session-menu" | "terminal-tools");
     }
     state
 }
@@ -125,10 +143,11 @@ pub(super) fn connect(state: &mut PhoneTerminal, index: usize, cx: &mut Context<
     let terminal = cx.new(|cx| builder.subscribe(cx));
     // Seed after the first layout has sized the actual terminal emulator.
     let seed_terminal = terminal.clone();
+    let host_name = state.hosts[index].name.clone();
     cx.spawn(async move |_, cx| {
         smol::Timer::after(Duration::from_millis(400)).await;
         seed_terminal.update(cx, |t,cx| t.write_pty_output(
-            b"\x1b[2J\x1b[H\x1b[32miZed native terminal preview\x1b[0m\r\nProduction terminal emulator and renderer.\r\nLocal echo fixture; no SSH or shell runs.\r\n\r\ndemo@studio ~ % ",cx));
+            format!("\x1b[2J\x1b[H\x1b[32miZed native terminal preview\x1b[0m\r\nProduction terminal emulator and renderer.\r\nLocal echo fixture; no SSH or shell runs.\r\nSession: {host_name}\r\n\r\ndemo ~ % ").as_bytes(),cx));
     }).detach();
     let terminal_id = terminal.entity_id();
     cx.spawn(async move |this, cx| {
@@ -212,6 +231,7 @@ impl Catalog {
             "landing",
             "terminal",
             "session-menu",
+            "terminal-tools",
             "connecting",
             "access-error",
             "disconnected",
@@ -279,8 +299,8 @@ impl Render for Catalog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let snapshot = if let Some(screen) = self.screens.get(&self.selected) {
             let state = screen.read(cx);
-            serde_json::json!({"id":self.selected,"menu":state.menu,"control":state.control,
-                "busy":state.busy,"message":state.message,"sessions":state.sessions.len(),
+            serde_json::json!({"id":self.selected,"menu":state.menu,"menu_progress":state.menu_motion.progress,"tools_menu":state.tools_menu,"tools_notice":state.tools_notice,"control":state.control,
+                "busy":state.busy,"message":state.message,"sessions":state.sessions.len(),"active_session":state.active,"active_sessions":state.sessions.iter().enumerate().filter(|(_,s)|s.connected).map(|(slot,s)|serde_json::json!({"slot":slot,"name":state.hosts[s.host].name,"selected":state.active==Some(slot)})).collect::<Vec<_>>(),
                 "terminal":state.terminal().map(|t|t.read(cx).get_content()).unwrap_or_default()})
         } else {
             serde_json::json!({"id":self.selected,"control":self.control})

@@ -47,7 +47,11 @@ final class TerminalUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.tables["machine-list"].waitForExistence(timeout: 12))
         // Cached rows can exist before the live Tailscale proxy is ready.
+        app.buttons["Device settings"].tap()
         XCTAssertTrue(app.buttons["save-tailscale-device-name"].waitForExistence(timeout: 30), "Tailscale must be ready")
+        capture("00-device-settings")
+        app.navigationBars.buttons["Machines"].tap()
+        capture("00-machine-picker")
         let target = try XCTUnwrap(URLComponents(string: "ssh://\(address)"))
         let host = try XCTUnwrap(target.host)
         let user = try XCTUnwrap(target.user)
@@ -101,6 +105,9 @@ final class TerminalUITests: XCTestCase {
         try connectFixture(app, address: address)
         let trust = app.alerts.matching(NSPredicate(format: "label IN %@", ["Verify host identity", "Host identity changed"])).firstMatch
         XCTAssertTrue(trust.waitForExistence(timeout: 20), "Must reach the SSH host and ask for trust")
+        let expected = ProcessInfo.processInfo.environment["IZED_TEST_FINGERPRINT"] ?? ""
+        XCTAssertTrue(expected.hasPrefix("SHA256:"), "Supply the independently verified fixture fingerprint")
+        XCTAssertTrue(trust.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", expected)).firstMatch.exists, "Fixture fingerprint must match before accepting")
         capture("01-host-verification")
         let approve = trust.buttons.matching(NSPredicate(format: "label IN %@", ["Trust and connect", "Trust new identity"])).firstMatch
         approve.tap()
@@ -112,6 +119,10 @@ final class TerminalUITests: XCTestCase {
         waitForExpectations(timeout: 10)
         XCTAssertTrue((terminal.value as? String ?? "").contains("UTF-8: ✓"), "Split UTF-8 and ANSI packets must survive")
         let keyboard = app.keyboards.firstMatch
+        // Dismiss the simulator keyboard’s non-binding first-use typing tip.
+        let typingTip = app.buttons["Continue"]
+        if typingTip.exists { typingTip.tap() }
+        XCTAssertTrue(keyboard.keys["q"].waitForExistence(timeout: 5), "The keyboard must expose actual letter keys")
         let keyboardVisible = NSPredicate { _, _ in
             keyboard.exists && keyboard.frame.intersection(app.frame).height >= 100
         }
@@ -126,10 +137,10 @@ final class TerminalUITests: XCTestCase {
         let frame = app.frame
         // GPUI exposes the grid, not its accessory buttons, to native accessibility.
         // Grid bottom inset 8 + strip border 1 + padding 5 + half button height 22.
-        // Seven equal buttons: horizontal padding 6 and six gaps of 2.
+        // Eight equal buttons: horizontal padding 6 and seven gaps of 2.
         let contentLeft = terminal.frame.minX - 10
         let contentWidth = terminal.frame.width + 20
-        let buttonWidth = (contentWidth - 12 - 12) / 7
+        let buttonWidth = (contentWidth - 12 - 14) / 8
         let ctrl = CGPoint(x: contentLeft + 6 + 2 * (buttonWidth + 2) + buttonWidth / 2,
                            y: terminal.frame.maxY + 8 + 1 + 5 + 22)
         XCTAssertTrue(frame.contains(ctrl), "Ctrl must be inside the visible app")

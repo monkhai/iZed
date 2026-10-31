@@ -31,7 +31,8 @@ public final class TerminalUi {
     private static View inputView;
     private static int lastKeyboardHeight;
     private static LinearLayout footer;
-    private static EditText deviceName;
+    private static Dialog deviceSettings;
+    private static LinearLayout settingsForm;
     private static View refreshControl;
     private static final int BG = 0xff0a0a0a, SURFACE = 0xff111111, BORDER = 0xff2e2e2e,
             TEXT = 0xffededed, MUTED = 0xffa0a0a0, GREEN = 0xff00ac3a;
@@ -64,6 +65,12 @@ public final class TerminalUi {
         FrameLayout bar = new FrameLayout(a); bar.setBackgroundColor(BG);
         TextView name = label(a, title); font(name, 17, true); name.setGravity(android.view.Gravity.CENTER);
         bar.addView(name, new FrameLayout.LayoutParams(-1, dp(a, 60)));
+        boolean groupedActions=title.equals("Machines")&&refresh!=null;
+        if(groupedActions) {
+            View capsule=new View(a);capsule.setBackground(shape(a,0xff272727,22,true));
+            FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(dp(a,104),dp(a,44),android.view.Gravity.RIGHT|android.view.Gravity.CENTER_VERTICAL);
+            params.rightMargin=dp(a,16);bar.addView(capsule,params);
+        }
         if (back != null) {
             boolean close = title.equals("Machines");
             View icon = new View(a) {
@@ -89,9 +96,9 @@ public final class TerminalUi {
                     android.graphics.Paint paint = new android.graphics.Paint(3);
                     float scale = getWidth() / 44f;
                     canvas.save(); canvas.scale(scale, scale);
-                    paint.setColor(0xff272727); canvas.drawCircle(22,22,21,paint);
-                    paint.setColor(BORDER); paint.setStyle(android.graphics.Paint.Style.STROKE); paint.setStrokeWidth(1);
-                    canvas.drawCircle(22,22,21,paint);
+                    if(!groupedActions){paint.setColor(0xff272727);canvas.drawCircle(22,22,21,paint);
+                        paint.setColor(BORDER);paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(1);canvas.drawCircle(22,22,21,paint);}
+                    paint.setStyle(android.graphics.Paint.Style.STROKE);
                     paint.setColor(TEXT); paint.setStrokeWidth(1.8f); paint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
                     canvas.drawArc(12,12,32,33,-60,-300,false,paint);
                     canvas.drawLine(22,10,27,13.4f,paint); canvas.drawLine(27,13.4f,23,18,paint);
@@ -101,7 +108,29 @@ public final class TerminalUi {
             refreshControl=icon;
             icon.setContentDescription("Refresh machines"); icon.setOnClickListener(v -> refresh.run());
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(dp(a,44),dp(a,44),android.view.Gravity.RIGHT|android.view.Gravity.CENTER_VERTICAL);
-            params.rightMargin=dp(a,16); bar.addView(icon,params);
+            params.rightMargin=dp(a,groupedActions?18:16); bar.addView(icon,params);
+        }
+        if (title.equals("Machines")) {
+            View settings = new View(a) {
+                protected void onDraw(android.graphics.Canvas canvas) {
+                    android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                    canvas.save();canvas.scale(getWidth()/44f,getHeight()/44f);
+                    if(!groupedActions){paint.setColor(0xff272727);canvas.drawCircle(22,22,21,paint);
+                        paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(1);paint.setColor(BORDER);canvas.drawCircle(22,22,21,paint);}
+                    paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setColor(TEXT);paint.setStrokeWidth(1.5f);paint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+                    android.graphics.Path gear=new android.graphics.Path();
+                    for(int i=0;i<48;i++) {
+                        double angle=-Math.PI/2+i*Math.PI/24;
+                        float radius=(i%6==0||i%6==5)?8:10;
+                        float x=22+(float)Math.cos(angle)*radius,y=22+(float)Math.sin(angle)*radius;
+                        if(i==0)gear.moveTo(x,y);else gear.lineTo(x,y);
+                    }
+                    gear.close();canvas.drawPath(gear,paint);canvas.drawCircle(22,22,3.5f,paint);canvas.restore();
+                }
+            };
+            settings.setContentDescription("Device settings");settings.setOnClickListener(v->showDeviceSettings(a));
+            FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(dp(a,44),dp(a,44),android.view.Gravity.RIGHT|android.view.Gravity.CENTER_VERTICAL);
+            params.rightMargin=dp(a,groupedActions?74:64);bar.addView(settings,params);
         }
         View line = new View(a); line.setBackgroundColor(BORDER);
         bar.addView(line,new FrameLayout.LayoutParams(-1,dp(a,0.5f),android.view.Gravity.BOTTOM));
@@ -185,16 +214,16 @@ public final class TerminalUi {
         View magnifier=new View(activity) {
             protected void onDraw(android.graphics.Canvas canvas) {
                 android.graphics.Paint p=new android.graphics.Paint(3); p.setColor(MUTED); p.setStyle(android.graphics.Paint.Style.STROKE); p.setStrokeWidth(dp(activity,1.4f));
-                canvas.drawCircle(dp(activity,9),dp(activity,20),dp(activity,7),p);
-                canvas.drawLine(dp(activity,14),dp(activity,25),dp(activity,20),dp(activity,31),p);
+                canvas.drawCircle(dp(activity,18),dp(activity,20),dp(activity,6),p);
+                canvas.drawLine(dp(activity,22),dp(activity,24),dp(activity,28),dp(activity,30),p);
             }
         };
-        searchBox.addView(magnifier,new LinearLayout.LayoutParams(dp(activity,20),-1));
+        searchBox.addView(magnifier,new LinearLayout.LayoutParams(dp(activity,40),-1));
         search=input(activity,"Find a machine",""); search.setBackgroundColor(Color.TRANSPARENT); search.setPadding(0,0,dp(activity,8),0);
         searchBox.addView(search,new LinearLayout.LayoutParams(0,-1,1)); header.addView(searchBox,size(activity,44));
-        gap(header,12); status=label(activity,""); status.setMaxLines(2); header.addView(status);
+        gap(header,12); status=label(activity,""); status.setMaxLines(2); status.setPadding(dp(activity,2),0,0,0); header.addView(status);
         body.addView(header,size(activity,118)); rows=column(activity); body.addView(rows);
-        footer=column(activity); footer.setPadding(dp(activity,18),dp(activity,8),dp(activity,18),dp(activity,24)); body.addView(footer);
+        footer=column(activity); body.addView(footer);
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s,int start,int count,int after) {}
             public void onTextChanged(CharSequence s,int start,int before,int count) { renderRows(); }
@@ -203,7 +232,6 @@ public final class TerminalUi {
         present(picker,content); renderRows();
     }
     private static void section(String text) {
-        gap(rows,22); // UITableView sectionHeaderTopPadding in the production iOS picker.
         TextView title=label(owner,text); font(title,10,true); title.setTextColor(MUTED);
         title.setGravity(android.view.Gravity.CENTER_VERTICAL); title.setPadding(dp(owner,18),0,0,0);
         rows.addView(title,size(owner,34));
@@ -238,7 +266,7 @@ public final class TerminalUi {
             }
         };
     }
-    private static void row(String title,String subtitle,boolean online,String iconKind,Runnable action) {
+    private static void row(String title,String subtitle,String iconKind,Runnable action) {
         LinearLayout row=new LinearLayout(owner); row.setGravity(android.view.Gravity.CENTER_VERTICAL);
         row.setPadding(dp(owner,18),0,dp(owner,18),0);
         row.setBackground(new android.graphics.drawable.RippleDrawable(
@@ -248,20 +276,16 @@ public final class TerminalUi {
         TextView name=label(owner,title); font(name,13,true); name.setSingleLine(); name.setEllipsize(android.text.TextUtils.TruncateAt.END); text.addView(name);
         gap(text,6); TextView detail=label(owner,subtitle); detail.setSingleLine(); detail.setEllipsize(android.text.TextUtils.TruncateAt.END); text.addView(detail);
         row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
-        if(online || !iconKind.equals("terminal")) {
-            View indicator=new View(owner) {
-                protected void onDraw(android.graphics.Canvas canvas) {
-                    android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-                    paint.setColor(online?GREEN:MUTED);
-                    float x=getWidth()/2f,y=getHeight()/2f;
-                    if(online)canvas.drawCircle(x,y,dp(getContext(),3.5f),paint);
-                    else {paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(dp(getContext(),1.5f));
-                        canvas.drawLine(x-dp(getContext(),2),y-dp(getContext(),5),x+dp(getContext(),2),y,paint);
-                        canvas.drawLine(x+dp(getContext(),2),y,x-dp(getContext(),2),y+dp(getContext(),5),paint);}
-                }
-            };
-            row.addView(indicator,new LinearLayout.LayoutParams(dp(owner,18),dp(owner,24)));
-        }
+        View indicator=new View(owner) {
+            protected void onDraw(android.graphics.Canvas canvas) {
+                android.graphics.Paint paint=new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+                paint.setColor(MUTED);paint.setStyle(android.graphics.Paint.Style.STROKE);paint.setStrokeWidth(dp(getContext(),1.5f));
+                float x=getWidth()/2f,y=getHeight()/2f;
+                canvas.drawLine(x-dp(getContext(),2),y-dp(getContext(),5),x+dp(getContext(),2),y,paint);
+                canvas.drawLine(x+dp(getContext(),2),y,x-dp(getContext(),2),y+dp(getContext(),5),paint);
+            }
+        };
+        row.addView(indicator,new LinearLayout.LayoutParams(dp(owner,18),dp(owner,24)));
         row.setOnClickListener(v -> action.run()); row.setContentDescription(title+", "+subtitle);
         rows.addView(row,size(owner,76)); View line=new View(owner); line.setBackgroundColor(BORDER);
         LinearLayout.LayoutParams border=size(owner,0); border.height=Math.max(1,dp(owner,0.5f)); border.leftMargin=dp(owner,66); border.rightMargin=dp(owner,18); rows.addView(line,border);
@@ -277,9 +301,8 @@ public final class TerminalUi {
     private static void renderRows() {
         if (rows==null || owner==null) return;
         String message=model.optString("message"); boolean ready=model.optBoolean("tailnet_ready");
-        status.setText(model.optBoolean("refreshing") ? "Refreshing Tailscale machines…" : !message.isEmpty() ? message : ready ? "Your Tailscale machines · synced just now\nConnected through iZed Terminal" : "Connect to Tailscale to see your machines.");
         if(refreshControl!=null){refreshControl.setEnabled(!model.optBoolean("refreshing"));refreshControl.setAlpha(model.optBoolean("refreshing")?0.4f:1f);}
-        rows.removeAllViews(); String query=search.getText().toString().toLowerCase(java.util.Locale.ROOT);
+        rows.removeAllViews(); String entered=search.getText().toString().trim(); String query=entered.toLowerCase(java.util.Locale.ROOT);
         JSONArray saved=model.optJSONArray("saved"); JSONObject roster=model.optJSONObject("roster");
         JSONArray machines=roster==null ? null : roster.optJSONArray("machines");
         int count=0;
@@ -287,9 +310,8 @@ public final class TerminalUi {
             JSONObject host=saved.optJSONObject(i); if(host==null)continue;
             String name=host.optString("name"),address=host.optString("address");
             if(!(name+address).toLowerCase(java.util.Locale.ROOT).contains(query))continue;
-            if(count++==0)section("RECENT CONNECTIONS");
-            boolean online=false; if(machines!=null)for(int j=0;j<machines.length();j++) { JSONObject m=machines.optJSONObject(j); if(m!=null&&matches(host,m)&&m.optBoolean("online"))online=true; }
-            row(name,address,online,"terminal",()->connect(host));
+            if(count++==0)section("SAVED CONNECTIONS");
+            row(name,address,"terminal",()->connect(host));
         }
         int discovered=0;
         if(machines!=null)for(int i=0;i<machines.length();i++) {
@@ -297,22 +319,64 @@ public final class TerminalUi {
             String name=machine.optString("name"),address=machine.optString("address");
             boolean duplicate=false; if(saved!=null)for(int j=0;j<saved.length();j++)if(saved.optJSONObject(j)!=null&&matches(saved.optJSONObject(j),machine))duplicate=true;
             if(duplicate || !(name+address+machine.optString("hostname")).toLowerCase(java.util.Locale.ROOT).contains(query))continue;
-            if(discovered++==0)section("ON YOUR TAILNET");
-            row(name,machine.optString("os")+" · "+(machine.optBoolean("online") ? "Online in Tailscale" : "Offline in Tailscale"),machine.optBoolean("online"),machine.optString("os").equalsIgnoreCase("macos") ? (name.toLowerCase(java.util.Locale.ROOT).contains("macbook") ? "laptop" : "desktop") : "server",()->connection(owner,machine));
+            if(discovered++==0)section("COMPUTERS");
+            row(name,machine.optString("os")+" · "+(machine.optBoolean("online") ? "Online in Tailscale" : "Offline in Tailscale"),machine.optString("os").equalsIgnoreCase("macos") ? (name.toLowerCase(java.util.Locale.ROOT).contains("macbook") ? "laptop" : "desktop") : "server",()->connection(owner,machine));
         }
-        if(count+discovered==0)gap(rows,44);
-        String editing=deviceName==null ? owner.getPreferences(Context.MODE_PRIVATE).getString("tailscale-device-name","iZed Android") : deviceName.getText().toString();
-        boolean focused=deviceName!=null&&deviceName.hasFocus();
-        if(focused)return;
-        footer.removeAllViews(); deviceName=input(owner,"Name this Android in Tailscale",editing); font(deviceName,12,false); footer.addView(deviceName,size(owner,42)); gap(footer,4);
-        boolean loginPending=message.equals("Waiting for Tailscale sign-in…");
-        Button login=button(owner,ready ? "Save device name" : loginPending ? "Waiting for Tailscale…" : "Connect to Tailscale",()-> {
-            String name=deviceName.getText().toString().trim(); if(name.isEmpty()){deviceName.setError("Enter a device name");return;}
-            owner.getPreferences(Context.MODE_PRIVATE).edit().putString("tailscale-device-name",name).apply();
-            deviceName.clearFocus(); nativeEvent(ready ? "name" : "login",name);
-        }); login.setEnabled(!model.optBoolean("refreshing")&&!loginPending); login.setAlpha(login.isEnabled()?1f:0.4f); footer.addView(login,size(owner,44)); gap(footer,8);
-        footer.addView(label(owner,ready ? "This name identifies iZed Terminal in your tailnet." : "Sign in once. iZed Terminal appears as its own device in your tailnet."));
-        if(ready){gap(footer,4); Button logout=button(owner,"Sign out of Tailscale",()->new AlertDialog.Builder(owner).setTitle("Sign out of Tailscale?").setMessage("iZed Terminal will need to sign in again to reach your tailnet.").setNegativeButton("Cancel",null).setPositiveButton("Sign Out",(d,w)->event("logout")).show()); font(logout,10,false); logout.setTextColor(0xffff453a); footer.addView(logout,size(owner,30));}
+        if(model.optBoolean("refreshing"))status.setText("Refreshing Tailscale machines…");
+        else if(!message.isEmpty())status.setText(message);
+        else if(!ready)status.setText("Connect to Tailscale to see your machines.");
+        else if(!query.isEmpty()) {
+            int total=count+discovered;
+            status.setText(total==0 ? "No results for “"+entered+"”.\nTry another name, hostname, or IP address."
+                    : total+" "+(total==1?"result":"results")+" for “"+entered+"”\nChoose a computer to connect over SSH.");
+        } else if(machines==null||machines.length()==0)status.setText("No computers are available in this tailnet yet.");
+        else {
+            long age=Math.max(0,System.currentTimeMillis()/1000-roster.optLong("updated_at"));
+            String time=age<60?"just now":age<3600?(age/60)+"m ago":(age/3600)+"h ago";
+            status.setText("Choose a computer to connect over SSH.\nTailscale machines · updated "+time);
+        }
+        if(ready){footer.removeAllViews();footer.setVisibility(View.GONE);}
+        else {footer.setVisibility(View.VISIBLE);renderDeviceSettings(footer);}
+        if(deviceSettings!=null&&deviceSettings.isShowing())renderDeviceSettings(settingsForm);
+    }
+    private static void showDeviceSettings(Activity activity) {
+        if(deviceSettings!=null&&deviceSettings.isShowing())return;
+        Dialog dialog=new Dialog(activity,android.R.style.Theme_DeviceDefault_NoActionBar);deviceSettings=dialog;
+        LinearLayout page=column(activity);page.setFocusableInTouchMode(true);
+        page.addView(navigation(activity,"Device settings",dialog::dismiss,null));
+        ScrollView scroll=new ScrollView(activity);settingsForm=column(activity);scroll.addView(settingsForm);
+        page.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        dialog.setOnDismissListener(d->{if(deviceSettings==dialog){deviceSettings=null;settingsForm=null;}if(picker!=null&&picker.isShowing())renderRows();});
+        renderDeviceSettings(settingsForm);present(dialog,page);
+    }
+    private static TextView settingsLabel(String text,int size) {
+        TextView label=label(owner,text);font(label,size,false);label.setTextColor(MUTED);return label;
+    }
+    private static void renderDeviceSettings(LinearLayout form) {
+        if(form==null||owner==null)return;
+        EditText previous=form.findViewWithTag("tailscale-device-name");
+        // Model refreshes must not replace the field while the user is typing.
+        if(previous!=null&&previous.hasFocus())return;
+        boolean ready=model.optBoolean("tailnet_ready"),pending=model.optString("message").equals("Waiting for Tailscale sign-in…");
+        form.removeAllViews();form.setMinimumHeight(dp(owner,ready?360:304));form.setPadding(dp(owner,18),dp(owner,24),dp(owner,18),dp(owner,24));
+        form.addView(settingsLabel(ready?"THIS DEVICE":"CONNECT THIS DEVICE",10));gap(form,10);
+        form.addView(settingsLabel("How this device appears in Tailscale.",11));gap(form,24);
+        form.addView(settingsLabel("DEVICE NAME",10));gap(form,8);
+        EditText name=input(owner,"Name this Android in Tailscale",owner.getPreferences(Context.MODE_PRIVATE).getString("tailscale-device-name","iZed Android"));
+        name.setTag("tailscale-device-name");name.setContentDescription("This device’s Tailscale name");font(name,12,false);form.addView(name,size(owner,44));gap(form,10);
+        form.addView(settingsLabel("This names your Android device, not the computer you connect to.",11));gap(form,20);
+        Button action=button(owner,ready?"Save device name":pending?"Waiting for Tailscale…":"Connect to Tailscale",()->{
+            String value=name.getText().toString().trim();if(value.isEmpty()){name.setError("Enter a device name");return;}
+            owner.getPreferences(Context.MODE_PRIVATE).edit().putString("tailscale-device-name",value).apply();
+            ((android.view.inputmethod.InputMethodManager)owner.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(name.getWindowToken(),0);
+            name.clearFocus();nativeEvent(ready?"name":"login",value);
+        });
+        action.setGravity(android.view.Gravity.CENTER);action.setBackground(shape(owner,SURFACE,6,true));
+        action.setEnabled(!model.optBoolean("refreshing")&&!pending);action.setAlpha(action.isEnabled()?1f:0.4f);form.addView(action,size(owner,44));
+        if(ready){gap(form,24);Button logout=button(owner,"Sign out of Tailscale",()->new AlertDialog.Builder(owner)
+                .setTitle("Sign out of Tailscale?").setMessage("iZed Terminal will need to sign in again to reach your tailnet.")
+                .setNegativeButton("Cancel",null).setPositiveButton("Sign Out",(d,w)->event("logout")).show());
+            font(logout,11,false);logout.setTextColor(0xffff453a);form.addView(logout,size(owner,44));}
     }
     private static void connection(Activity activity,JSONObject machine) {
         String name=machine.optString("name"),address=machine.optString("address");
@@ -484,7 +548,8 @@ public final class TerminalUi {
     public static void resume() { event("refresh"); }
     public static void destroy() {
         if (trust != null && trust.isShowing()) trust.dismiss();
+        if (deviceSettings != null) deviceSettings.dismiss();
         if (picker != null) picker.dismiss();
-        lastKeyboardHeight = 0; inputView = null; footer = null; deviceName = null; refreshControl = null; picker = null; trust = null; rows = null; status = null; search = null; screen = null; owner = null;
+        lastKeyboardHeight = 0; inputView = null; footer = null; settingsForm = null; deviceSettings = null; refreshControl = null; picker = null; trust = null; rows = null; status = null; search = null; screen = null; owner = null;
     }
 }

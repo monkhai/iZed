@@ -27,14 +27,15 @@ final class PreviewServer {
 
   func start() throws {
     let parameters = NWParameters.tcp
-    parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: 43221)
+    let port = UInt16(ProcessInfo.processInfo.environment["IZED_CATALOG_CONTROL_PORT"] ?? "43221") ?? 43221
+    parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
     let listener = try NWListener(using: parameters)
     self.listener = listener
     listener.newConnectionHandler = { [weak self] connection in
       Task { @MainActor in self?.accept(connection) }
     }
     listener.start(queue: .main)
-    print("Rndr preview endpoint: http://127.0.0.1:43221")
+    print("Rndr preview endpoint: http://127.0.0.1:\(port)")
   }
 
   private func accept(_ connection: NWConnection) {

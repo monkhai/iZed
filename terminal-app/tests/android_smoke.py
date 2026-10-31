@@ -80,7 +80,10 @@ def main():
         adb("shell", "am", "force-stop", app)
         adb("shell", "am", "start", "-W", "-n", app + "/.platform.GpuiActivity")
         wait(lambda root: find(root, "Machines"))
+        click("Device settings")
         wait(lambda root: find(root, "Save device name"), timeout=60)
+        capture("00-device-settings")
+        click("Machines")
 
     def connect():
         click(args.machine)
@@ -137,10 +140,10 @@ def main():
         density = adb("shell", "wm", "density")
         scale = int(re.findall(r"density:\s*(\d+)", density)[-1]) / 160
         left, top, right, bottom = bounds(grid)
-        # Same shared seven-button accessory geometry as TerminalUITests.swift.
+        # Same shared eight-button accessory geometry as TerminalUITests.swift.
         content_left = left - 10 * scale
         content_width = right - left + 20 * scale
-        width = (content_width - 24 * scale) / 7
+        width = (content_width - 26 * scale) / 8
         x = content_left + 6 * scale + 2 * (width + 2 * scale) + width / 2
         y = bottom + 36 * scale
         adb("shell", "input", "tap", str(round(x)), str(round(y)))

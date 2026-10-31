@@ -19,7 +19,7 @@ use std::{
     ffi::{c_char, CStr, CString},
     path::PathBuf,
     sync::LazyLock,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use terminal::{terminal_settings::TerminalSettings, Terminal, TerminalBounds, TerminalBuilder};
 use theme::ActiveTheme;
@@ -144,6 +144,47 @@ impl Drop for Session {
     }
 }
 
+#[derive(Default)]
+struct MenuMotion {
+    progress: f32,
+    velocity: f32,
+    last_frame: Option<Instant>,
+}
+
+impl MenuMotion {
+    fn update(&mut self, open: bool, window: &mut Window) -> f32 {
+        let target = if open { 1. } else { 0. };
+        #[cfg(target_os = "ios")]
+        unsafe {
+            unsafe extern "C" { fn UIAccessibilityIsReduceMotionEnabled() -> bool; }
+            if UIAccessibilityIsReduceMotionEnabled() {
+                self.progress = target;
+                self.velocity = 0.;
+                self.last_frame = None;
+                return target;
+            }
+        }
+        let now = Instant::now();
+        let dt = self.last_frame.map_or(1. / 60., |last| now.duration_since(last).as_secs_f32().min(0.05));
+        // Analytic critically damped spring: retain position and velocity when
+        // the user reverses direction, without overshooting the header bounds.
+        let displacement = self.progress - target;
+        let term = self.velocity + 24. * displacement;
+        let decay = (-24. * dt).exp();
+        self.progress = target + (displacement + term * dt) * decay;
+        self.velocity = (self.velocity - 24. * term * dt) * decay;
+        if (self.progress - target).abs() < 0.001 && self.velocity.abs() < 0.01 {
+            self.progress = target;
+            self.velocity = 0.;
+            self.last_frame = None;
+        } else {
+            self.last_frame = Some(now);
+            window.request_animation_frame();
+        }
+        self.progress.clamp(0., 1.)
+    }
+}
+
 struct PhoneTerminal {
     #[cfg(feature = "native-catalog")]
     preview: bool,
@@ -152,6 +193,9 @@ struct PhoneTerminal {
     active: Option<usize>,
     focus: FocusHandle,
     menu: bool,
+    menu_motion: MenuMotion,
+    tools_menu: bool,
+    tools_notice: Option<&'static str>,
     control: bool,
     busy: bool,
     message: String,
@@ -277,6 +321,9 @@ impl PhoneTerminal {
             active: None,
             focus: cx.focus_handle(),
             menu: false,
+            menu_motion: MenuMotion::default(),
+            tools_menu: false,
+            tools_notice: None,
             control: false,
             busy: false,
             message,
@@ -585,6 +632,7 @@ impl Render for PhoneTerminal {
         // NativeActivity's content rectangle already accounts for the Android IME.
         #[cfg(target_os = "android")]
         let keyboard = 0.;
+        let menu_progress = self.menu_motion.update(self.menu, window);
         let active = self.active.map(|i| &self.sessions[i]);
         let connected = active.map_or(false, |s| s.connected);
         let name = active
@@ -643,10 +691,95 @@ impl Render for PhoneTerminal {
                 palette,
                 cx.listener(|this, _, _, cx| {
                     this.menu = !this.menu;
+                    this.tools_menu = false;
                     cx.notify();
                 }),
                 cx.listener(|this, _, _, _| this.picker(true)),
-            ));
+            ).when(menu_progress > 0., |header| header.border_color(surface)));
+
+        if menu_progress > 0. {
+            let active_sessions = self.sessions.iter().filter(|session| session.connected).count();
+            let can_disconnect = self.active.is_some_and(|slot| self.sessions[slot].connected);
+            let rows = active_sessions.max(1) + usize::from(can_disconnect);
+            let menu_height = if active_sessions == 0 { 44. } else { active_sessions as f32 * 56. }
+                + if can_disconnect { 44. } else { 0. }
+                + (rows - 1) as f32 * 3. + 11.;
+            let mut menu = div()
+                .w_full()
+                .h(px(menu_height))
+                .flex_shrink_0()
+                .bg(surface)
+                .border_b_1()
+                .border_color(border)
+                .py(px(5.))
+                .flex()
+                .flex_col()
+                .gap(px(3.));
+            if active_sessions == 0 {
+                menu = menu.child(
+                    div()
+                        .p(px(12.))
+                        .text_color(muted)
+                        .child("No active sessions. Tap + to connect."),
+                );
+            }
+            for (slot, session) in self.sessions.iter().enumerate().filter(|(_, session)| session.connected) {
+                let host = &self.hosts[session.host];
+                let selected = self.active == Some(slot);
+                menu = menu.child(
+                    div()
+                        .id(("session", slot))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .h(px(56.))
+                        .px(px(12.))
+                        .when(selected, |row| row.bg(colors.element_selected))
+                        .active(|s| s.bg(colors.element_selected))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(3.))
+                                .child(host.name.clone())
+                                .child(
+                                    div()
+                                        .text_size(px(10.))
+                                        .text_color(muted)
+                                        .child(host.address.clone()),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_color(green)
+                                .child(if selected { "✓" } else { "●" }),
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if this.sessions.get(slot).is_some_and(|session| session.connected) {
+                                this.active = Some(slot);
+                                this.menu = false;
+                                this.message.clear();
+                                show_keyboard();
+                                cx.notify();
+                            }
+                        })),
+                );
+            }
+            if let Some(slot) = self.active.filter(|_| can_disconnect) {
+                menu = menu.child(
+                    self.button("disconnect", "Disconnect", cx)
+                        .justify_start()
+                        .text_color(muted)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.sessions[slot].cancel.try_send(()).ok();
+                            this.menu = false;
+                            cx.notify();
+                        })),
+                );
+            }
+            content = content.child(div().w_full().flex_shrink_0()
+                .h(px(menu_height * menu_progress)).overflow_hidden().child(menu));
+        }
 
         if let Some(terminal) = self.terminal() {
             let canvas_terminal = terminal.clone();
@@ -679,8 +812,9 @@ impl Render for PhoneTerminal {
                                     t.select_word_at_event_position(event);
                                     cx.notify();
                                 });
-                                this.message =
-                                    "Text selected. Open the session menu to copy.".into();
+                                this.tools_menu = true;
+                                this.tools_notice = None;
+                                this.menu = false;
                                 cx.notify();
                             }
                         }),
@@ -784,7 +918,12 @@ impl Render for PhoneTerminal {
                 palette,
                 self.control,
                 cx.listener(|this, key: &&'static str, _, cx| {
-                    if *key == "control" {
+                    if *key == "more" {
+                        this.tools_menu = !this.tools_menu;
+                        this.tools_notice = None;
+                        this.menu = false;
+                        cx.notify();
+                    } else if *key == "control" {
                         this.control = !this.control;
                         cx.notify();
                     } else {
@@ -794,118 +933,62 @@ impl Render for PhoneTerminal {
             ));
         }
 
-        if self.menu {
-            let mut menu = div()
+        if self.tools_menu && self.active.is_some() {
+            let has_selection = self.terminal().map_or(false, |terminal| {
+                terminal.read(cx).last_content.selection_text.as_ref().is_some_and(|text| !text.is_empty())
+            });
+            let bottom_inset = if keyboard > 0. { keyboard } else { bottom };
+            let tools = div()
                 .absolute()
-                .top(px(top + 52.))
-                .left(px(left + 10.))
-                .right(px(right + 10.))
+                .bottom(px(bottom_inset + 54.))
+                .left_0()
+                .right_0()
+                .occlude()
                 .bg(colors.elevated_surface_background)
-                .border_1()
-                .border_color(border)
-                .rounded(px(6.))
-                .shadow_md()
-                .p(px(5.))
-                .flex()
-                .flex_col()
-                .gap(px(3.));
-            if self.hosts.is_empty() {
-                menu = menu.child(
-                    div()
-                        .p(px(12.))
-                        .text_color(muted)
-                        .child("No connections yet"),
-                );
-            }
-            for (index, host) in self.hosts.iter().enumerate() {
-                let running = self.sessions.iter().any(|s| s.host == index && s.connected);
-                menu = menu.child(
-                    div()
-                        .id(("host", index))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .h(px(56.))
-                        .px(px(12.))
-                        .rounded(px(4.))
-                        .active(|s| s.bg(colors.element_selected))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(px(3.))
-                                .child(host.name.clone())
-                                .child(
-                                    div()
-                                        .text_size(px(10.))
-                                        .text_color(muted)
-                                        .child(host.address.clone()),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_color(if running { green } else { muted })
-                                .child(if running { "●" } else { ">_" }),
-                        )
-                        .on_click(cx.listener(move |this, _, _, cx| this.connect(index, cx))),
-                );
-            }
-            menu =
-                menu.child(
-                    div()
-                        .flex()
-                        .border_t_1()
-                        .border_color(border)
-                        .mt(px(4.))
-                        .child(
-                            self.button("paste", "Paste", cx)
-                                .flex_1()
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.paste(cx);
-                                    this.menu = false;
-                                    cx.notify();
-                                })),
-                        )
-                        .child(self.button("copy-screen", "Copy", cx).flex_1().on_click(
-                            cx.listener(|this, _, _, cx| {
-                                if let Some(terminal) = this.terminal() {
-                                    let terminal = terminal.read(cx);
-                                    cx.write_to_clipboard(ClipboardItem::new_string(
-                                        terminal
-                                            .last_content
-                                            .selection_text
-                                            .clone()
-                                            .unwrap_or_else(|| terminal.get_content()),
-                                    ));
-                                }
-                                this.menu = false;
-                                cx.notify();
-                            }),
-                        ))
-                        .child(self.button("keyboard", "Keyboard", cx).flex_1().on_click(
-                            cx.listener(|this, _, _, cx| {
-                                this.menu = false;
-                                if ized_platform::keyboard_height() > 0. {
-                                    hide_keyboard();
-                                } else {
-                                    show_keyboard();
-                                }
-                                cx.notify();
-                            }),
-                        )),
-                );
-            if let Some(slot) = self.active {
-                menu = menu.child(
-                    self.button("disconnect", "Disconnect", cx)
-                        .text_color(muted)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.sessions[slot].cancel.try_send(()).ok();
-                            this.menu = false;
-                            cx.notify();
-                        })),
-                );
-            }
-            content = content.child(menu);
+                .border_t_1().border_color(border).shadow_md()
+                .py(px(5.)).flex().flex_col().gap(px(3.))
+                .child(div().px(px(12.)).py(px(8.)).text_size(px(10.)).text_color(muted).child("TERMINAL OPTIONS"))
+                .child(self.button("terminal-paste", "Paste", cx).justify_start().on_click(cx.listener(|this, _, _, cx| {
+                    this.paste(cx);
+                    this.tools_menu = false;
+                    cx.notify();
+                })))
+                .child(self.button("terminal-copy-selection", "Copy selection", cx).justify_start()
+                    .when(!has_selection, |el| el.text_color(muted))
+                    .when(has_selection, |el| el.on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(terminal) = this.terminal() {
+                            if let Some(selection) = terminal.read(cx).last_content.selection_text.clone() {
+                                cx.write_to_clipboard(ClipboardItem::new_string(selection));
+                                this.tools_notice = Some("Selection copied.");
+                            }
+                        }
+                        cx.notify();
+                    }))))
+                .when(!has_selection, |el| el.child(div().px(px(12.)).pb(px(6.)).text_size(px(10.)).text_color(muted)
+                    .child("Select text in the terminal to copy it.")))
+                .child(self.button("terminal-copy-output", "Copy full output", cx).justify_start().on_click(cx.listener(|this, _, _, cx| {
+                    if let Some(terminal) = this.terminal() {
+                        cx.write_to_clipboard(ClipboardItem::new_string(terminal.read(cx).get_content()));
+                        this.tools_notice = Some("Full output copied.");
+                    }
+                    cx.notify();
+                })))
+                .child(self.button("terminal-keyboard", if ized_platform::keyboard_height() > 0. { "Hide keyboard" } else { "Show keyboard" }, cx)
+                    .justify_start().border_t_1().border_color(border).on_click(cx.listener(|this, _, _, cx| {
+                        this.tools_menu = false;
+                        if ized_platform::keyboard_height() > 0. { hide_keyboard(); }
+                        else { show_keyboard(); }
+                        cx.notify();
+                    })))
+                .when_some(self.tools_notice, |el, notice| el.child(div().px(px(12.)).py(px(8.)).text_size(px(11.)).text_color(green).child(notice)));
+            content = content
+                .child(div().id("dismiss-terminal-options").absolute().inset_0().occlude()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                        this.tools_menu = false;
+                        cx.stop_propagation();
+                        cx.notify();
+                    })))
+                .child(tools);
         }
         content
     }
