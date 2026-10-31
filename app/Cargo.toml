@@ -6,6 +6,7 @@ description = "iZed iPad app host and GPUI platform integration"
 publish = false
 
 [features]
+native-catalog = []
 ized = ["dep:agent", "dep:agent_ui", "dep:anyhow", "dep:askpass", "dep:assets", "dep:client", "dep:collections", "dep:command_palette", "dep:command_palette_hooks", "dep:dap_adapters", "dep:db", "dep:debugger_ui", "dep:diagnostics", "dep:editor", "dep:file_finder", "dep:fs", "dep:futures", "dep:git_ui", "dep:gpui_tokio", "dep:grammars", "dep:language", "dep:language_model", "dep:language_models", "dep:node_runtime", "dep:paths", "dep:project", "dep:project_panel", "dep:prompt_store", "dep:release_channel", "dep:remote", "dep:rust-embed", "dep:search", "dep:semver", "dep:serde", "dep:serde_json", "dep:session", "dep:settings", "dep:sidebar", "dep:smol", "dep:tasks_ui", "dep:terminal_view", "dep:theme", "dep:theme_settings", "dep:ui", "dep:util", "dep:vim", "dep:workspace", "dep:zed_actions"]
 
 [lib]
@@ -76,6 +77,26 @@ zed_actions = { git = "https://github.com/zed-industries/zed", rev = "5688167d22
 objc2 = "0.6"
 
 [target.'cfg(target_os = "android")'.dependencies]
+rust-embed = { version = "8.11", features = ["debug-embed"] }
+assets = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "assets" }
+paths = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "paths" }
+release_channel = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "release_channel" }
+settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "settings" }
+theme = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme" }
+theme_settings = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "theme_settings" }
+util = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "util" }
+smol = { version = "2" }
+semver = { version = "1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+terminal = { git = "https://github.com/zed-industries/zed", rev = "5688167d224b5eca54875d49afb8bfd73a07915a", package = "terminal" }
+libc = "0.2"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
+anyhow = "1"
+jni = "0.22"
+rand = "0.10"
+russh = { version = "0.63.3", default-features = false, features = ["ring"] }
+zeroize = "1"
 android_logger = "0.15"
 android-activity = { version = "0.6", features = ["native-activity"] }
 
@@ -85,7 +106,12 @@ livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "
 libwebrtc = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "147fbca3d4b592d96d33f5e6a84b59fc0b5d9bf1" }
 webrtc-sys = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "147fbca3d4b592d96d33f5e6a84b59fc0b5d9bf1" }
 
+[patch."https://github.com/zed-industries/trash-rs"]
+trash = { path = "vendor/trash" }
+
 [patch."https://github.com/zed-industries/zed"]
+settings = { path = "vendor/settings" }
+fs = { path = "vendor/fs" }
 agent_ui = { path = "vendor/agent_ui" }
 
 [profile.release]

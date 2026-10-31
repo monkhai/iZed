@@ -40,32 +40,55 @@ final class TerminalUITests: XCTestCase {
         app.navigationBars.buttons["Machines"].tap()
     }
 
+    // Use the same picker as a normal launch, keeping only test settings isolated.
+    @discardableResult
+    func connectFixture(_ app: XCUIApplication, address: String) throws -> String {
+        app.launchEnvironment["IZED_PICKER_TEST"] = "1"
+        app.launch()
+        XCTAssertTrue(app.tables["machine-list"].waitForExistence(timeout: 12))
+        // Cached rows can exist before the live Tailscale proxy is ready.
+        app.buttons["Device settings"].tap()
+        XCTAssertTrue(app.buttons["save-tailscale-device-name"].waitForExistence(timeout: 30), "Tailscale must be ready")
+        capture("00-device-settings")
+        app.navigationBars.buttons["Machines"].tap()
+        capture("00-machine-picker")
+        let target = try XCTUnwrap(URLComponents(string: "ssh://\(address)"))
+        let host = try XCTUnwrap(target.host)
+        let user = try XCTUnwrap(target.user)
+        XCTAssertTrue(target.port == nil || target.port == 22, "Picker requires a fixture on tailnet port 22")
+        let savedAddress = "\(user)@\(host.contains(":") ? "[\(host)]" : host)"
+        let recent = app.tables["machine-list"].cells["saved-\(savedAddress)"]
+        if recent.exists {
+            recent.tap()
+            return savedAddress
+        }
+        let machine = app.tables["machine-list"].cells["machine-\(host)"]
+        XCTAssertTrue(machine.waitForExistence(timeout: 20), "Fixture must be discovered in Tailscale")
+        machine.tap()
+        let username = app.textFields["ssh-username"]
+        XCTAssertTrue(username.waitForExistence(timeout: 5))
+        username.tap(); username.typeText(user)
+        app.buttons["open-terminal"].tap()
+        return savedAddress
+    }
+
     func testHostVerificationAfterPickerDismissal() throws {
         continueAfterFailure = false
         let address = ProcessInfo.processInfo.environment["IZED_TEST_HOST"] ?? ""
         guard !address.isEmpty && !address.contains("$(") else { throw XCTSkip("Set IZED_TEST_HOST to the SSH fixture") }
         let app = XCUIApplication(bundleIdentifier: "com.monkhai.ized-terminal")
-        app.launchEnvironment["IZED_PICKER_TEST"] = "1"
-        app.launch()
-        XCTAssertTrue(app.tables["machine-list"].waitForExistence(timeout: 12))
-        app.buttons["add-manually"].tap()
-        let name = app.textFields["connection-name"]
-        XCTAssertTrue(name.waitForExistence(timeout: 5))
-        name.tap(); name.typeText("Verification regression")
-        let target = app.textFields["connection-address"]
-        target.tap(); target.typeText(address)
-        app.buttons["open-terminal"].tap()
-        let trust = app.alerts["Verify host identity"]
+        let savedAddress = try connectFixture(app, address: address)
+        let trust = app.alerts.matching(NSPredicate(format: "label IN %@", ["Verify host identity", "Host identity changed"])).firstMatch
         XCTAssertTrue(trust.waitForExistence(timeout: 15), "Fingerprint prompt must survive the picker closing")
         XCTAssertTrue(trust.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "SHA256:")).firstMatch.exists)
-        capture("01-verification-after-new-connection")
+        capture("01-verification-after-picker-connection")
         trust.buttons["Cancel"].tap()
         XCTAssertTrue(trust.waitForNonExistence(timeout: 5))
         // Cancelling must release the busy state; choosing the recent connection
         // immediately afterward must present its fingerprint again.
         let frame = app.frame
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 85 / frame.height)).tap()
-        let recent = app.tables["machine-list"].cells["saved-\(address)"]
+        let recent = app.tables["machine-list"].cells["saved-\(savedAddress)"]
         XCTAssertTrue(recent.waitForExistence(timeout: 5))
         recent.tap()
         XCTAssertTrue(trust.waitForExistence(timeout: 15), "Recent connections must also wait for picker dismissal")
@@ -79,31 +102,50 @@ final class TerminalUITests: XCTestCase {
         let address = ProcessInfo.processInfo.environment["IZED_TEST_HOST"] ?? ""
         guard !address.isEmpty && !address.contains("$(") else { throw XCTSkip("Set IZED_TEST_HOST to the isolated SSH fixture") }
         let app = XCUIApplication(bundleIdentifier: "com.monkhai.ized-terminal")
-        app.launchEnvironment["IZED_SMOKE_TEST"] = "1"
-        app.launchEnvironment["IZED_TEST_AUTO_HOST"] = address
-        app.launch()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 15))
-        let trust = app.alerts["Verify host identity"]
+        try connectFixture(app, address: address)
+        let trust = app.alerts.matching(NSPredicate(format: "label IN %@", ["Verify host identity", "Host identity changed"])).firstMatch
         XCTAssertTrue(trust.waitForExistence(timeout: 20), "Must reach the SSH host and ask for trust")
+        let expected = ProcessInfo.processInfo.environment["IZED_TEST_FINGERPRINT"] ?? ""
+        XCTAssertTrue(expected.hasPrefix("SHA256:"), "Supply the independently verified fixture fingerprint")
+        XCTAssertTrue(trust.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", expected)).firstMatch.exists, "Fixture fingerprint must match before accepting")
         capture("01-host-verification")
-        trust.buttons["Trust and connect"].tap()
-        if trust.exists { trust.buttons["Trust and connect"].tap() }
+        let approve = trust.buttons.matching(NSPredicate(format: "label IN %@", ["Trust and connect", "Trust new identity"])).firstMatch
+        approve.tap()
+        if trust.exists { approve.tap() }
         XCTAssertTrue(trust.waitForNonExistence(timeout: 5))
         let terminal = app.descendants(matching: .any).matching(identifier: "ssh-terminal-screen").firstMatch
         XCTAssertTrue(terminal.waitForExistence(timeout: 15))
         expectation(for: NSPredicate(format: "value CONTAINS %@", "SSH ready"), evaluatedWith: terminal)
         waitForExpectations(timeout: 10)
         XCTAssertTrue((terminal.value as? String ?? "").contains("UTF-8: ✓"), "Split UTF-8 and ANSI packets must survive")
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
-        XCTAssertLessThanOrEqual(terminal.frame.maxY, app.keyboards.firstMatch.frame.minY - 40)
+        let keyboard = app.keyboards.firstMatch
+        // Dismiss the simulator keyboard’s non-binding first-use typing tip.
+        let typingTip = app.buttons["Continue"]
+        if typingTip.exists { typingTip.tap() }
+        XCTAssertTrue(keyboard.keys["q"].waitForExistence(timeout: 5), "The keyboard must expose actual letter keys")
+        let keyboardVisible = NSPredicate { _, _ in
+            keyboard.exists && keyboard.frame.intersection(app.frame).height >= 100
+        }
+        XCTAssertTrue(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardVisible, object: nil)], timeout: 10) == .completed,
+                      "Show the simulator software keyboard before running the keyboard-layout test")
+        XCTAssertLessThanOrEqual(terminal.frame.maxY, keyboard.frame.minY - 40)
         capture("02-terminal-keyboard")
         app.typeText("phone_ssh_smoke\n")
         expectation(for: NSPredicate(format: "value CONTAINS %@", "PHONE_SSH_OK"), evaluatedWith: terminal)
         waitForExpectations(timeout: 10)
         capture("03-ssh-command")
         let frame = app.frame
-        let keyboardTop = app.keyboards.firstMatch.frame.minY
-        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: frame.width * 2.5 / 7, dy: keyboardTop - 27)).tap()
+        // GPUI exposes the grid, not its accessory buttons, to native accessibility.
+        // Grid bottom inset 8 + strip border 1 + padding 5 + half button height 22.
+        // Eight equal buttons: horizontal padding 6 and seven gaps of 2.
+        let contentLeft = terminal.frame.minX - 10
+        let contentWidth = terminal.frame.width + 20
+        let buttonWidth = (contentWidth - 12 - 14) / 8
+        let ctrl = CGPoint(x: contentLeft + 6 + 2 * (buttonWidth + 2) + buttonWidth / 2,
+                           y: terminal.frame.maxY + 8 + 1 + 5 + 22)
+        XCTAssertTrue(frame.contains(ctrl), "Ctrl must be inside the visible app")
+        XCTAssertLessThan(ctrl.y + 22, keyboard.frame.minY, "Ctrl must be above the keyboard")
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: ctrl.x - frame.minX, dy: ctrl.y - frame.minY)).tap()
         app.typeText("c")
         expectation(for: NSPredicate(format: "value CONTAINS %@", "^C"), evaluatedWith: terminal)
         waitForExpectations(timeout: 5)
