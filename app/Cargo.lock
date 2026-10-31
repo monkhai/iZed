@@ -5219,7 +5219,6 @@ dependencies = [
 [[package]]
 name = "fs"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed?rev=5688167d224b5eca54875d49afb8bfd73a07915a#5688167d224b5eca54875d49afb8bfd73a07915a"
 dependencies = [
  "anyhow",
  "ashpd",
@@ -7238,9 +7237,11 @@ dependencies = [
  "gpui_tokio",
  "grammars",
  "ized-platform",
+ "jni 0.22.4",
  "language",
  "language_model",
  "language_models",
+ "libc",
  "log",
  "node_runtime",
  "objc2",
@@ -7248,9 +7249,11 @@ dependencies = [
  "project",
  "project_panel",
  "prompt_store",
+ "rand 0.10.3",
  "release_channel",
  "remote",
  "reqwest_client",
+ "russh",
  "rust-embed",
  "search",
  "semver",
@@ -7261,15 +7264,18 @@ dependencies = [
  "sidebar",
  "smol",
  "tasks_ui",
+ "terminal",
  "terminal_view",
  "theme",
  "theme_settings",
+ "tokio",
  "ui",
  "util",
  "vim",
  "workspace",
  "zed-reqwest",
  "zed_actions",
+ "zeroize",
 ]
 
 [[package]]
@@ -12466,7 +12472,6 @@ dependencies = [
 [[package]]
 name = "settings"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed?rev=5688167d224b5eca54875d49afb8bfd73a07915a#5688167d224b5eca54875d49afb8bfd73a07915a"
 dependencies = [
  "anyhow",
  "collections",
@@ -14443,7 +14448,6 @@ dependencies = [
 [[package]]
 name = "trash"
 version = "5.2.5"
-source = "git+https://github.com/zed-industries/trash-rs?rev=3bf27effd4eb8699f2e484d3326b852fe3e53af7#3bf27effd4eb8699f2e484d3326b852fe3e53af7"
 dependencies = [
  "chrono",
  "libc",

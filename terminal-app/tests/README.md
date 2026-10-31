@@ -29,3 +29,40 @@ Ctrl-C. Do not commit keys, logs or virtual environments.
 The fixture echoes bytes, handles CRLF as one submission and ignores Backspace
 on empty input. It is not a full Unicode editor or normal shell. ANSI/UTF-8 banner
 writes are split deliberately, but SSH/TCP may coalesce them.
+
+## Android live smoke test
+
+Build the embedded library with `bash app/android/build-tailscale.sh`, then build
+`ized-app` using cargo-ndk and assemble its existing Gradle app. This reuses the
+production Rust SSH transport and terminal renderer. The Android host requires
+its app-local SSH identity and an interactive Tailscale sign-in before testing.
+Use a dedicated emulator; the script refuses physical-device serials.
+
+After runtime approval, read only `no_backup/device-public-key.pub` with
+`adb -s emulator-5554 exec-out run-as com.monkhai.ized cat ...` and use that public
+key with the fixture above. Reuse the approved userspace Tailscale helper that
+forwards tailnet port 22 to the loopback fixture. Start a fresh fixture process
+for each test run so host verification is exercised. Compare its printed host
+fingerprint before supplying it to the test; the script refuses a mismatch.
+
+```sh
+python3 terminal-app/tests/android_smoke.py \
+  --serial emulator-5554 --address smoke@TAILNET_IP --machine ized-ssh-fixture \
+  --fingerprint SHA256:EXACT_FIXTURE_FINGERPRINT \
+  --events /path/to/fixture-events.jsonl --output /path/to/test-evidence
+```
+
+The test restarts only the test app, checks public-key persistence, rejects then
+accepts the verified host, and checks real SSH authentication, split ANSI/UTF-8,
+synthetic input, accessory and hardware Ctrl-C, remote PTY resize on keyboard
+hide/show, and background/foreground resume. It saves
+screenshots and a JSON result. It does not approve login, alter tailnet policy,
+read private keys, reset the emulator, or configure a personal device. Stop the
+fixture and forwarding helper after testing. The fixture never executes commands.
+
+The verified local renderer setup uses Android Emulator 37.2.12 with the
+session-only `-gpu lavapipe` option. Emulator 35.2.10 with its SwiftShader Vulkan
+backend stalled in `vkCreateGraphicsPipelines` before app initialization. Use an
+already-installed compatible engine without wiping the AVD or changing security
+settings. Android debug builds must enable `rust-embed/debug-embed`, as iOS does,
+so default settings are embedded rather than read from build-machine paths.

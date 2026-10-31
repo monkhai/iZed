@@ -1,215 +1,176 @@
-//! First Android terminal milestone: shared production presentation, local UI only.
-//! No shell, SSH, Tailscale, account or credential service is initialized here.
+//! Android native dialogs and callbacks for the shared production terminal.
+use crate::{
+    android_tailnet::{self, Command},
+    terminal_app::{self, send_native_event, NativeEvent},
+};
+use ized_platform::android::jni as android;
+use jni::objects::{JObject, JValue};
+use std::ffi::{c_char, c_void, CStr};
 
-#[path = "../../terminal-app/src/presentation.rs"]
-mod presentation;
+const UI: &str = "com.monkhai.ized.platform.TerminalUi";
 
-use gpui::{prelude::*, *};
-use std::borrow::Cow;
-
-#[derive(Default)]
-struct PreviewState {
-    preview: bool,
-    menu: bool,
-    control: bool,
-    inputs: usize,
-    last_key: String,
-}
-
-impl PreviewState {
-    fn back(&mut self) {
-        if self.menu {
-            self.menu = false;
-        } else {
-            self.preview = false;
-            self.control = false;
-        }
-    }
-
-    fn key(&mut self, key: &str) {
-        match key {
-            "escape" => self.back(),
-            "control" => self.control = !self.control,
-            _ => {
-                self.inputs += 1;
-                self.last_key = format!("{}{}", if self.control { "ctrl+" } else { "" }, key);
-                self.control = false;
-            }
-        }
-    }
-}
-
-struct AndroidTerminal {
-    state: PreviewState,
-    focus: FocusHandle,
-}
-
-// Vercel Dark colors from app/themes/vercel-theme.json, also used by the iOS terminal.
-fn palette() -> presentation::Palette {
-    presentation::Palette {
-        text: rgb(0xededed).into(),
-        muted: rgb(0xa0a0a0).into(),
-        surface: rgb(0x000000).into(),
-        border: rgb(0x2e2e2e).into(),
-        green: rgb(0x00ac3a).into(),
-        element_background: rgb(0x1f1f1f).into(),
-        element_selected: rgb(0x1a1a1a).into(),
-    }
-}
-
-impl Render for AndroidTerminal {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        window.focus(&self.focus, cx);
-        let p = palette();
-        let insets = ized_platform::android::jni::platform()
-            .and_then(|platform| platform.primary_window())
-            .map(|window| window.safe_area_insets_logical());
-        let mut content = div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .min_h_0()
-            .bg(rgb(0x000000))
-            .text_color(p.text)
-            .text_size(px(13.))
-            .font_family("JetBrains Mono")
-            .pt(px(insets.as_ref().map_or(0., |i| i.top)))
-            .pb(px(insets.as_ref().map_or(0., |i| i.bottom)))
-            .pl(px(insets.as_ref().map_or(0., |i| i.left)))
-            .pr(px(insets.as_ref().map_or(0., |i| i.right)))
-            .track_focus(&self.focus)
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                if event.keystroke.key == "escape" {
-                    this.state.back();
-                    cx.notify();
-                    cx.stop_propagation();
-                }
-            }))
-            .child(presentation::session_header(
-                if self.state.preview {
-                    "Local preview"
-                } else {
-                    "iZed Terminal"
-                },
-                false,
-                p,
-                cx.listener(|this, _, _, cx| {
-                    this.state.menu = !this.state.menu;
-                    cx.notify();
-                }),
-                cx.listener(|this, _, _, cx| {
-                    this.state.preview = false;
-                    this.state.menu = false;
-                    this.state.control = false;
-                    cx.notify();
-                }),
-            ))
-            .child(
-                div()
-                    .px(px(18.))
-                    .py(px(10.))
-                    .text_size(px(11.))
-                    .text_color(p.muted)
-                    .child("Android UI preview · no remote connection"),
-            );
-
-        if self.state.menu {
-            content = content.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .p(px(12.))
-                    .bg(p.element_background)
-                    .child(div().child("No SSH sessions connected"))
-                    .child(
-                        presentation::button("reset-preview", "Reset preview", p).on_click(
-                            cx.listener(|this, _, _, cx| {
-                                this.state = PreviewState::default();
-                                cx.notify();
-                            }),
-                        ),
-                    )
-                    .child(
-                        presentation::button("close-menu", "Close menu", p).on_click(cx.listener(
-                            |this, _, _, cx| {
-                                this.state.menu = false;
-                                cx.notify();
-                            },
-                        )),
-                    ),
-            );
-        }
-
-        if self.state.preview {
-            content =
-                content.child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .gap(px(8.))
-                        .p(px(10.))
-                        .bg(rgb(0x111111))
-                        .child(div().text_size(px(14.)).child("Local input preview"))
-                        .child(div().text_color(p.muted).child(
-                            "Accessory keys update this local fixture. No shell is running.",
-                        ))
-                        .child(div().child(format!("Input events: {}", self.state.inputs)))
-                        .child(div().child(format!(
-                            "Last key: {}",
-                            if self.state.last_key.is_empty() {
-                                "none".to_string()
-                            } else {
-                                self.state.last_key.clone()
-                            }
-                        )))
-                        .child(
-                            presentation::button("back-machines", "Back to machines", p).on_click(
-                                cx.listener(|this, _, _, cx| {
-                                    this.state.preview = false;
-                                    this.state.control = false;
-                                    cx.notify();
-                                }),
-                            ),
-                        ),
-                );
-            content = content.child(presentation::key_strip(
-                p,
-                self.state.control,
-                cx.listener(|this, key: &&'static str, _, cx| {
-                    this.state.key(key);
-                    cx.notify();
-                }),
-            ));
-        } else {
-            content = content.child(presentation::machines_empty_state(p,
-                cx.listener(|this, _, _, cx| {
-                    this.state.preview = true;
-                    this.state.menu = false;
-                    cx.notify();
-                })))
-                .child(div().px(px(22.)).pb(px(18.)).text_size(px(11.)).text_color(p.muted)
-                    .child("Browse opens a local preview. Machine discovery and SSH are not available yet."));
-        }
-        content
-    }
-}
-
-pub fn open(cx: &mut App) {
-    cx.text_system()
-        .add_fonts(vec![
-            Cow::Borrowed(include_bytes!("../fonts/JetBrainsMono-Regular.ttf")),
-            Cow::Borrowed(include_bytes!("../fonts/JetBrainsMono-Medium.ttf")),
-        ])
-        .expect("load terminal fonts");
-    cx.open_window(WindowOptions::default(), |_, cx| {
-        cx.new(|cx| AndroidTerminal {
-            state: PreviewState::default(),
-            focus: cx.focus_handle(),
-        })
+fn call(action: &str, payload: &str) -> Result<(), String> {
+    android::with_env(|env| {
+        let activity = android::activity(env)?;
+        let class = android::find_app_class(env, UI)?;
+        let action = env.new_string(action).map_err(|e| e.to_string())?;
+        let payload = env.new_string(payload).map_err(|e| e.to_string())?;
+        let result = env.call_static_method(
+            &class,
+            jni::jni_str!("update"),
+            jni::jni_sig!("(Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;)V"),
+            &[
+                JValue::Object(&activity),
+                JValue::Object(&action),
+                JValue::Object(&payload),
+            ],
+        );
+        env.exception_clear();
+        result
+            .map(|_| ())
+            .map_err(|_| "Could not open Android terminal controls".into())
     })
-    .expect("open Android terminal UI");
-    log::info!("Android terminal UI is live (local preview only)");
-    cx.activate(true);
+}
+fn publish_error(error: String) {
+    send_native_event(NativeEvent::TailscaleError(error));
+}
+pub(crate) fn open_login(url: &str) -> anyhow::Result<()> {
+    call("login", url).map_err(anyhow::Error::msg)
+}
+
+#[no_mangle]
+unsafe extern "C" fn terminal_machines(json: *const c_char, present: bool) {
+    if let Err(error) = call(
+        if present { "show" } else { "update" },
+        &CStr::from_ptr(json).to_string_lossy(),
+    ) {
+        log::error!("{error}");
+    }
+}
+#[no_mangle]
+unsafe extern "C" fn terminal_show_trust(
+    address: *const c_char,
+    fingerprint: *const c_char,
+    changed: bool,
+) {
+    let payload = serde_json::json!({"address": CStr::from_ptr(address).to_string_lossy(),
+        "fingerprint": CStr::from_ptr(fingerprint).to_string_lossy(), "changed": changed});
+    if call("trust", &payload.to_string()).is_err() {
+        terminal_app::terminal_trust_host(false);
+    }
+}
+#[no_mangle]
+extern "C" fn terminal_start_tailscale() {
+    android_tailnet::command(Command::Refresh);
+}
+#[no_mangle]
+extern "C" fn terminal_refresh_tailscale() {
+    android_tailnet::command(Command::Refresh);
+}
+#[no_mangle]
+unsafe extern "C" fn terminal_accessibility(
+    value: *const c_char,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) {
+    let payload = serde_json::json!({"text": CStr::from_ptr(value).to_string_lossy(), "x":x, "y":y, "width":width, "height":height});
+    // Prepaint's debug-build stack is too deep to enter ART safely. Coalesce
+    // snapshots and deliver through the existing queue outside the render stack.
+    static SCREEN: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    let Some(platform) = android::platform() else { return };
+    let mut latest = SCREEN.lock().unwrap();
+    let scheduled = latest.is_some();
+    *latest = Some(payload.to_string());
+    drop(latest);
+    if !scheduled {
+        platform.foreground_executor().dispatch_on_main_thread(|| {
+            let snapshot = SCREEN.lock().unwrap().take();
+            if let Some(snapshot) = snapshot {
+                if let Err(error) = call("screen", &snapshot) {
+                    log::error!("Could not update terminal accessibility: {error}");
+                }
+            }
+        });
+    }
+}
+
+#[no_mangle]
+unsafe extern "C" fn Java_com_monkhai_ized_platform_TerminalUi_nativeEvent(
+    _env: *mut c_void,
+    _class: *mut c_void,
+    action: *mut c_void,
+    payload: *mut c_void,
+) {
+    let result = android::with_env(|env| {
+        let action = android::get_string(env, &JObject::from_raw(env, action.cast()));
+        let payload = android::get_string(env, &JObject::from_raw(env, payload.cast()));
+        match action.as_str() {
+            "keyboard_height" => {
+                if let Ok(height) = payload.parse::<f32>() { ized_platform::set_keyboard_height(height); }
+            }
+            "text" => send_native_event(NativeEvent::Text(payload)),
+            "refresh" => android_tailnet::command(Command::Refresh),
+            "login" => android_tailnet::command(Command::Login(payload)),
+            "name" => android_tailnet::command(Command::Name(payload)),
+            "logout" => android_tailnet::command(Command::Logout),
+            "trust" => terminal_app::terminal_trust_host(payload == "true"),
+            "add" => {
+                let host: crate::ssh::Host =
+                    serde_json::from_str(&payload).map_err(|e| e.to_string())?;
+                send_native_event(NativeEvent::Add(host));
+            }
+            "error" => publish_error(payload),
+            _ => {}
+        }
+        Ok(())
+    });
+    if let Err(error) = result {
+        publish_error(error);
+    }
+}
+
+pub(crate) fn data_dir() -> std::path::PathBuf {
+    let path = android::with_env(|env| {
+        let activity = android::activity(env)?;
+        let file = env
+            .call_method(
+                &activity,
+                jni::jni_str!("getNoBackupFilesDir"),
+                jni::jni_sig!("()Ljava/io/File;"),
+                &[],
+            )
+            .and_then(|v| v.l())
+            .map_err(|e| e.to_string())?;
+        let path = env
+            .call_method(
+                &file,
+                jni::jni_str!("getAbsolutePath"),
+                jni::jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )
+            .and_then(|v| v.l())
+            .map_err(|e| e.to_string())?;
+        Ok(android::get_string(env, &path))
+    })
+    .expect("Android private data directory");
+    path.into()
+}
+
+pub(crate) fn network_interfaces() -> anyhow::Result<String> {
+    android::with_env(|env| {
+        let class = android::find_app_class(env, "com.monkhai.ized.platform.TerminalNetwork")?;
+        let result = env.call_static_method(&class, jni::jni_str!("interfaces"),
+            jni::jni_sig!("()Ljava/lang/String;"), &[])
+            .and_then(|value| value.l()).map_err(|e| e.to_string());
+        env.exception_clear();
+        Ok(android::get_string(env, &result?))
+    }).map_err(anyhow::Error::msg)
+}
+
+pub(crate) fn keyboard(show: bool) {
+    if let Err(error) = call("keyboard", if show { "show" } else { "hide" }) {
+        publish_error(error);
+    }
 }

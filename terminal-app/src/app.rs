@@ -5,10 +5,13 @@ mod presentation;
 mod native_catalog;
 
 use crate::{
-    ios_keys::private_key,
     ssh::{self, Host},
     tailnet::Roster,
 };
+#[cfg(target_os = "ios")]
+use crate::ios_keys::private_key;
+#[cfg(target_os = "android")]
+use crate::android_keys::private_key;
 use gpui::{font, prelude::*, *};
 use settings::{Settings, SettingsStore};
 use std::{
@@ -30,10 +33,12 @@ unsafe extern "C" {
     fn terminal_accessibility(value: *const c_char, x: f64, y: f64, width: f64, height: f64);
 }
 
-enum NativeEvent {
+pub(crate) enum NativeEvent {
     Add(Host),
     Trust(bool),
     Refresh,
+    #[cfg(target_os = "android")]
+    Text(String),
     TailscaleUpdate(String, ssh::TailscaleProxy),
     TailscaleError(String),
 }
@@ -42,7 +47,7 @@ static NATIVE_EVENTS: LazyLock<(
     smol::channel::Receiver<NativeEvent>,
 )> = LazyLock::new(smol::channel::unbounded);
 
-fn send_native_event(event: NativeEvent) {
+pub(crate) fn send_native_event(event: NativeEvent) {
     let _ = NATIVE_EVENTS.0.try_send(event);
 }
 
@@ -79,7 +84,7 @@ unsafe extern "C" fn terminal_add_host(
 }
 
 #[no_mangle]
-extern "C" fn terminal_trust_host(trust: bool) {
+pub(crate) extern "C" fn terminal_trust_host(trust: bool) {
     send_native_event(NativeEvent::Trust(trust));
 }
 
@@ -118,11 +123,11 @@ fn hosts_path() -> PathBuf {
         && (std::env::var("IZED_SMOKE_TEST").as_deref() == Ok("1")
             || std::env::var("IZED_PICKER_TEST").as_deref() == Ok("1"))
     {
-        "Documents/terminal-test-hosts.json"
+        "terminal-test-hosts.json"
     } else {
-        "Documents/terminal-hosts.json"
+        "terminal-hosts.json"
     };
-    PathBuf::from(std::env::var_os("HOME").unwrap()).join(file)
+    crate::tailnet::data_dir().join(file)
 }
 
 struct Session {
@@ -186,6 +191,13 @@ impl PhoneTerminal {
             while let Ok(event) = events.recv().await {
                 if this
                     .update(cx, |this, cx| match event {
+                        #[cfg(target_os = "android")]
+                        NativeEvent::Text(text) => {
+                            for character in text.chars() {
+                                let key = match character { '\n' | '\r' => "enter".into(), '\u{8}' => "backspace".into(), '\u{7f}' => "delete".into(), _ => character.to_string() };
+                                this.send_key(Keystroke { key, key_char: Some(character.to_string()), modifiers: Modifiers::default() }, cx);
+                            }
+                        }
                         NativeEvent::Refresh => this.refresh_roster(cx),
                         NativeEvent::TailscaleUpdate(status, proxy) => {
                             match Roster::from_status(&status) {
@@ -341,7 +353,7 @@ impl PhoneTerminal {
             self.active = Some(session);
             self.menu = false;
             self.message.clear();
-            ized_platform::show_keyboard();
+            show_keyboard();
             cx.notify();
             return;
         }
@@ -442,7 +454,7 @@ impl PhoneTerminal {
                                 });
                                 this.active = Some(slot);
                                 this.message.clear();
-                                ized_platform::show_keyboard();
+                                show_keyboard();
                             }
                             Err(error) => this.message = error.to_string(),
                         }
@@ -561,8 +573,18 @@ impl Render for PhoneTerminal {
             element_background: colors.element_background,
             element_selected: colors.element_selected,
         };
+        #[cfg(target_os = "ios")]
         let (top, bottom, left, right) = ized_platform::safe_area_insets();
+        #[cfg(target_os = "ios")]
         let keyboard = ized_platform::keyboard_height();
+        #[cfg(target_os = "android")]
+        let (top, bottom, left, right) = ized_platform::android::jni::platform()
+            .and_then(|platform| platform.primary_window())
+            .map(|window| { let i = window.safe_area_insets_logical(); (i.top, i.bottom, i.left, i.right) })
+            .unwrap_or_default();
+        // NativeActivity's content rectangle already accounts for the Android IME.
+        #[cfg(target_os = "android")]
+        let keyboard = 0.;
         let active = self.active.map(|i| &self.sessions[i]);
         let connected = active.map_or(false, |s| s.connected);
         let name = active
@@ -646,7 +668,7 @@ impl Render for PhoneTerminal {
                                     cx.notify();
                                 });
                             }
-                            ized_platform::show_keyboard();
+                            show_keyboard();
                         }),
                     )
                     .on_mouse_down(
@@ -864,9 +886,9 @@ impl Render for PhoneTerminal {
                             cx.listener(|this, _, _, cx| {
                                 this.menu = false;
                                 if ized_platform::keyboard_height() > 0. {
-                                    ized_platform::hide_keyboard();
+                                    hide_keyboard();
                                 } else {
-                                    ized_platform::show_keyboard();
+                                    show_keyboard();
                                 }
                                 cx.notify();
                             }),
@@ -1091,6 +1113,20 @@ pub fn open(cx: &mut App) {
         })
     })
     .expect("open terminal");
+    #[cfg(target_os = "ios")]
     ized_platform::ios::set_status_bar_style(ized_platform::StatusBarContentStyle::Light);
     cx.activate(true);
+}
+
+fn show_keyboard() {
+    #[cfg(target_os = "android")]
+    crate::android_terminal::keyboard(true);
+    #[cfg(not(target_os = "android"))]
+    ized_platform::show_keyboard();
+}
+fn hide_keyboard() {
+    #[cfg(target_os = "android")]
+    crate::android_terminal::keyboard(false);
+    #[cfg(not(target_os = "android"))]
+    ized_platform::hide_keyboard();
 }

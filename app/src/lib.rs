@@ -11,7 +11,20 @@ pub mod demos;
 pub mod screens;
 
 #[cfg(target_os = "android")]
+mod android_keys;
+#[cfg(target_os = "android")]
 mod android_terminal;
+#[cfg(target_os = "android")]
+mod android_tailnet;
+#[cfg(target_os = "android")]
+#[path = "../../terminal-app/src/app.rs"]
+mod terminal_app;
+#[cfg(target_os = "android")]
+#[path = "../../terminal-app/src/ssh.rs"]
+mod ssh;
+#[cfg(target_os = "android")]
+#[path = "../../terminal-app/src/tailnet.rs"]
+mod tailnet;
 
 #[cfg(all(target_os = "ios", feature = "ized"))]
 mod ized;
@@ -78,13 +91,14 @@ fn android_main(app: android_activity::AndroidApp) {
     // `Rc<RefCell<AppContext>>` (which GPUI callbacks hold via `Weak`) remains
     // valid — solving the lifetime mismatch that previously caused
     // `default_prevented=false` on touch events and potential crashes.
-    Application::with_platform(shared.into_rc()).run(|cx: &mut App| {
+    Application::with_platform(shared.into_rc()).with_assets(assets::Assets).run(|cx: &mut App| {
         log::info!("Application::run callback — opening Android terminal UI");
-        android_terminal::open(cx);
+        terminal_app::open(cx);
     });
 
     // `Application::run` returns here only after the event loop exits
     // (i.e. the activity was destroyed or quit() was called).
+    android_tailnet::command(android_tailnet::Command::Stop);
     log::info!("android_main: Application.run returned — activity will finish");
 }
 
