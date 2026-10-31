@@ -8,6 +8,14 @@
     "height": 700
   },
   {
+    "id": "device-settings",
+    "title": "Device settings",
+    "group": "UIKit screens",
+    "renderer": "UIKit",
+    "source": "terminal-app/ios/MachinePicker.swift",
+    "height": 700
+  },
+  {
     "id": "signed-out",
     "title": "Tailscale sign-in",
     "group": "UIKit screens",
@@ -121,11 +129,11 @@
   },
   {
     "id": "picker-footer",
-    "title": "Device settings footer",
+    "title": "Device settings form",
     "group": "UIKit components",
     "renderer": "UIKit",
     "source": "terminal-app/ios/MachinePicker.swift",
-    "height": 220
+    "height": 360
   },
   {
     "id": "saved-row",
@@ -178,6 +186,14 @@
   {
     "id": "session-menu",
     "title": "Session controls",
+    "group": "GPUI screens",
+    "renderer": "GPUI",
+    "source": "terminal-app/src/app.rs",
+    "height": 700
+  },
+  {
+    "id": "terminal-tools",
+    "title": "Terminal options",
     "group": "GPUI screens",
     "renderer": "GPUI",
     "source": "terminal-app/src/app.rs",

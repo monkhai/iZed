@@ -1,11 +1,20 @@
 {
   "result": "passed",
-  "processID": 57258,
+  "processID": 97328,
   "entries": [
     {
       "id": "machines",
       "renderer": "UIKit",
-      "surface": 780,
+      "surface": 453,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "device-settings",
+      "renderer": "UIKit",
+      "surface": 456,
       "size": [
         780,
         1400
@@ -14,7 +23,7 @@
     {
       "id": "signed-out",
       "renderer": "UIKit",
-      "surface": 788,
+      "surface": 461,
       "size": [
         780,
         1400
@@ -23,7 +32,7 @@
     {
       "id": "empty",
       "renderer": "UIKit",
-      "surface": 796,
+      "surface": 466,
       "size": [
         780,
         1400
@@ -32,7 +41,7 @@
     {
       "id": "refreshing",
       "renderer": "UIKit",
-      "surface": 315,
+      "surface": 423,
       "size": [
         780,
         1400
@@ -41,7 +50,7 @@
     {
       "id": "roster-error",
       "renderer": "UIKit",
-      "surface": 741,
+      "surface": 424,
       "size": [
         780,
         1400
@@ -50,7 +59,7 @@
     {
       "id": "search-results",
       "renderer": "UIKit",
-      "surface": 777,
+      "surface": 528,
       "size": [
         780,
         1400
@@ -59,7 +68,7 @@
     {
       "id": "search-empty",
       "renderer": "UIKit",
-      "surface": 802,
+      "surface": 531,
       "size": [
         780,
         1400
@@ -68,7 +77,7 @@
     {
       "id": "connection",
       "renderer": "UIKit",
-      "surface": 132,
+      "surface": 533,
       "size": [
         780,
         1400
@@ -77,7 +86,7 @@
     {
       "id": "connection-advanced",
       "renderer": "UIKit",
-      "surface": 803,
+      "surface": 433,
       "size": [
         780,
         1400
@@ -86,7 +95,7 @@
     {
       "id": "connection-invalid",
       "renderer": "UIKit",
-      "surface": 808,
+      "surface": 535,
       "size": [
         780,
         1400
@@ -95,7 +104,7 @@
     {
       "id": "connection-key-copied",
       "renderer": "UIKit",
-      "surface": 812,
+      "surface": 536,
       "size": [
         780,
         1400
@@ -104,7 +113,7 @@
     {
       "id": "sign-out",
       "renderer": "UIKit",
-      "surface": 814,
+      "surface": 537,
       "size": [
         780,
         1400
@@ -113,7 +122,7 @@
     {
       "id": "trust",
       "renderer": "UIKit",
-      "surface": 820,
+      "surface": 538,
       "size": [
         780,
         1400
@@ -122,7 +131,7 @@
     {
       "id": "trust-changed",
       "renderer": "UIKit",
-      "surface": 826,
+      "surface": 539,
       "size": [
         780,
         1400
@@ -131,7 +140,7 @@
     {
       "id": "search-field",
       "renderer": "UIKit",
-      "surface": 827,
+      "surface": 544,
       "size": [
         780,
         280
@@ -140,16 +149,16 @@
     {
       "id": "picker-footer",
       "renderer": "UIKit",
-      "surface": 837,
+      "surface": 546,
       "size": [
         780,
-        440
+        720
       ]
     },
     {
       "id": "saved-row",
       "renderer": "UIKit",
-      "surface": 848,
+      "surface": 547,
       "size": [
         780,
         152
@@ -158,7 +167,7 @@
     {
       "id": "online-row",
       "renderer": "UIKit",
-      "surface": 850,
+      "surface": 549,
       "size": [
         780,
         152
@@ -167,7 +176,7 @@
     {
       "id": "offline-row",
       "renderer": "UIKit",
-      "surface": 854,
+      "surface": 551,
       "size": [
         780,
         152
@@ -176,7 +185,7 @@
     {
       "id": "section-header",
       "renderer": "UIKit",
-      "surface": 861,
+      "surface": 561,
       "size": [
         780,
         88
@@ -185,7 +194,7 @@
     {
       "id": "landing",
       "renderer": "GPUI",
-      "surface": 886,
+      "surface": 562,
       "size": [
         780,
         1400
@@ -194,7 +203,7 @@
     {
       "id": "terminal",
       "renderer": "GPUI",
-      "surface": 903,
+      "surface": 579,
       "size": [
         780,
         1400
@@ -203,7 +212,16 @@
     {
       "id": "session-menu",
       "renderer": "GPUI",
-      "surface": 907,
+      "surface": 583,
+      "size": [
+        780,
+        1400
+      ]
+    },
+    {
+      "id": "terminal-tools",
+      "renderer": "GPUI",
+      "surface": 429,
       "size": [
         780,
         1400
@@ -212,7 +230,7 @@
     {
       "id": "connecting",
       "renderer": "GPUI",
-      "surface": 921,
+      "surface": 162,
       "size": [
         780,
         1400
@@ -221,7 +239,7 @@
     {
       "id": "access-error",
       "renderer": "GPUI",
-      "surface": 926,
+      "surface": 432,
       "size": [
         780,
         1400
@@ -230,7 +248,7 @@
     {
       "id": "disconnected",
       "renderer": "GPUI",
-      "surface": 890,
+      "surface": 518,
       "size": [
         780,
         1400
@@ -239,7 +257,7 @@
     {
       "id": "empty-menu",
       "renderer": "GPUI",
-      "surface": 894,
+      "surface": 602,
       "size": [
         780,
         1400
@@ -248,7 +266,7 @@
     {
       "id": "session-header",
       "renderer": "GPUI",
-      "surface": 869,
+      "surface": 578,
       "size": [
         780,
         160
@@ -257,7 +275,7 @@
     {
       "id": "landing-body",
       "renderer": "GPUI",
-      "surface": 904,
+      "surface": 563,
       "size": [
         780,
         500
@@ -266,7 +284,7 @@
     {
       "id": "key-strip",
       "renderer": "GPUI",
-      "surface": 901,
+      "surface": 587,
       "size": [
         780,
         160
@@ -275,7 +293,7 @@
     {
       "id": "key-strip-control",
       "renderer": "GPUI",
-      "surface": 887,
+      "surface": 581,
       "size": [
         780,
         160
@@ -284,7 +302,7 @@
     {
       "id": "button",
       "renderer": "GPUI",
-      "surface": 965,
+      "surface": 184,
       "size": [
         780,
         200

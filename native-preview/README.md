@@ -1,6 +1,6 @@
 # iZed native catalog
 
-A live catalog of the **terminal app** in `terminal-app/`. It contains 32 screens,
+A live catalog of the **terminal app** in `terminal-app/`. It contains 34 screens,
 states and components from production UIKit and GPUI source, rendered on iOS and
 displayed in a Mac canvas using Rndr's shared GPU-surface approach.
 
@@ -40,8 +40,8 @@ keep their state.
 
 | Source | Screens and states | Isolated components |
 | --- | --- | --- |
-| UIKit | Machines, signed out, empty, refreshing, roster error, search results/no results, connection editor, advanced command, username error, copied key, sign-out, first/changed host verification | Search header, device settings footer, saved/online/offline rows, section heading |
-| GPUI | Landing, connected terminal, session menu, connecting, access error, disconnected, empty session menu | Session header, empty-state body, accessory strip, control-active strip, button |
+| UIKit | Machines, device settings, signed out, empty, refreshing, roster error, search results/no results, connection editor, advanced command, username error, copied key, sign-out, first/changed host verification | Search header, device settings form, saved/online/offline rows, section heading |
+| GPUI | Landing, connected terminal, session menu, terminal options, connecting, access error, disconnected, empty session menu | Session header, empty-state body, accessory strip, control-active strip, button |
 
 `catalog.json` is the inventory and source map. `scripts/generate-catalog.py`
 generates the identical manifest for both clients and checks that source files
@@ -95,7 +95,7 @@ untouched. Ports `43220` (input) and `43221` (control) and the
 python3 scripts/check-catalog.py
 ```
 
-Checks all 32 entries, fixture state, source mapping, native surface dimensions,
+Checks all 34 entries, fixture state, source mapping, native surface dimensions,
 four resize paths with stable controllers, and invalid width rejection.
 The last recorded run is in `docs/verification.json`. Build checks also passed
 for the production Rust library without the feature and the production Objective-C
@@ -123,3 +123,22 @@ real system input behavior, but the catalog exports the selected app window,
 not the separate keyboard window. Native animations run during interaction;
 continuous GPUI updates are limited to the selected fixture. The canvas shows
 one active entry at a time, with persistent fixture state when switching.
+
+For a full-device keyboard review, launch the installed host on an iPhone with
+`SIMCTL_CHILD_IZED_CATALOG_FULL_DEVICE=1`,
+`SIMCTL_CHILD_IZED_CATALOG_INITIAL_SCENE=terminal-tools`, and
+`SIMCTL_CHILD_IZED_CATALOG_SHOW_KEYBOARD=1` before `xcrun simctl launch`.
+Set `SIMCTL_CHILD_IZED_CATALOG_CONTROL_PORT=43421` to keep the iPad catalog running
+on its default port. Mirror that iPhone with `serve-sim <iPhone-UDID>` to include
+the real system keyboard. If hardware keyboard simulation suppresses it, choose
+Device Hub → Device → Keyboard → Toggle Software Keyboard. The full-device
+mode uses the screen bounds; ordinary catalog windows retain their fixture size.
+
+Clipboard actions live under the accessory bar’s **…** button. The top menu
+contains active sessions and Disconnect. The session-menu fixture has three
+connected local terminals and a saved, inactive computer that does not appear in
+the switcher. Switching preserves the other terminals; **+** opens the real UIKit
+connection picker. The header expands with an interruptible spring and respects
+iOS Reduce Motion. Copy selection is available only with selected
+text; Copy full output includes scrollback. Right-clicking a word also opens the
+terminal options. The options panel stays above the accessory bar/keyboard inset.

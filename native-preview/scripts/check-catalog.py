@@ -34,13 +34,22 @@ try:
   assert 'error' not in surface and surface.get('surfaceID',0)>0,(id,surface)
   assert surface['width']==round(390*info['scale']) and surface['height']==round(entry['height']*info['scale']),(id,surface)
   state=info['state'];labels='\n'.join(state.get('labels',[]))
-  expected={'signed-out':'Connect to Tailscale','empty':'No computers are available','refreshing':'Refreshing Tailscale machines','roster-error':'Could not refresh','connection-invalid':'Enter your SSH username.','connection-key-copied':'Public key copied','saved-row':'Studio Mac','online-row':'Online in Tailscale','offline-row':'Offline in Tailscale','section-header':'ON YOUR TAILNET'}.get(id)
+  expected={'signed-out':'Connect to Tailscale','empty':'No computers are available','refreshing':'Refreshing Tailscale machines','roster-error':'Could not refresh','connection-invalid':'Enter your SSH username.','connection-key-copied':'Public key copied','saved-row':'Studio Mac','online-row':'Online in Tailscale','offline-row':'Offline in Tailscale','section-header':'COMPUTERS','device-settings':'THIS DEVICE','picker-footer':'DEVICE NAME'}.get(id)
   if expected:
    info=wait_info(id,lambda i:expected in "\n".join(i["state"].get("labels",[])))
    state=info["state"];labels="\n".join(state.get("labels",[]))
-  if id=='search-results':assert state['fields']['machine-search']=='Build' and 'Build server' in labels and 'MacBook Pro' not in labels
+  if id=='search-results':
+   assert state['fields']['machine-search']=='Build' and 'Build server' in labels and 'MacBook Pro' not in labels
+   assert '1 result for “Build”' in labels and 'Choose a computer to connect over SSH.' in labels
+   assert 'tailscale-device-name' not in state['fields']
+   assert 'Save device name' not in labels and 'Sign out of Tailscale' not in labels
   if id=='search-empty':assert state['fields']['machine-search']=='missing-machine' and 'Build server' not in labels
-  if id=='session-menu':assert state['menu']
+  if id=='session-menu':
+   assert state['menu'] and not state['tools_menu']
+   assert state['sessions']==3 and state['active_session']==0
+   assert [s['name'] for s in state['active_sessions']]==['Studio Mac','Build server','Dev box']
+   assert [s['selected'] for s in state['active_sessions']]==[True,False,False]
+  if id=='terminal-tools':assert state['tools_menu'] and not state['menu']
   if id=='connecting':assert state['busy'] and state['message']=='Connecting…'
   if id=='key-strip-control':assert state['control']
   results.append({'id':id,'renderer':entry['renderer'],'surface':surface['surfaceID'],'size':[surface['width'],surface['height']]})

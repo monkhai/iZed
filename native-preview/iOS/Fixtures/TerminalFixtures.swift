@@ -61,7 +61,7 @@ func terminalCatalogScreen(_ id: String) -> UIViewController {
   let isolated: UIView?
   switch id {
   case "search-field": isolated = picker.tableView.tableHeaderView
-  case "picker-footer": isolated = picker.tableView.tableFooterView
+  case "picker-footer": isolated = picker.deviceSettingsForm()
   case "saved-row":
     isolated = picker.tableView(picker.tableView, cellForRowAt: IndexPath(row: 0, section: 0))
   case "online-row":
@@ -76,14 +76,20 @@ func terminalCatalogScreen(_ id: String) -> UIViewController {
   }
   let nav = UINavigationController(rootViewController: picker)
   nav.overrideUserInterfaceStyle = .dark
+  if id == "device-settings" || id == "sign-out" { picker.showDeviceSettings() }
   return nav
 }
 
 @MainActor
 func terminalCatalogActivate(_ controller: UIViewController, id: String) {
   guard let nav = controller as? UINavigationController,
-    let picker = nav.topViewController as? MachinePicker
-  else { return }
+    let picker = nav.viewControllers.first as? MachinePicker
+  else {
+    // Hidden UIKit fixtures must not intercept the live terminal's + action.
+    MachinePicker.current = (controller.presentedViewController as? UINavigationController)?
+      .viewControllers.first as? MachinePicker
+    return
+  }
   MachinePicker.current = picker
   if id == "sign-out", nav.presentedViewController == nil { picker.confirmSignOut() }
   if id == "trust" || id == "trust-changed", nav.presentedViewController == nil {

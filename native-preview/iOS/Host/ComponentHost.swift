@@ -38,7 +38,7 @@ final class ComponentHost: UIViewController {
     for window in windows.values { window.isHidden = true }
     displayLink = CADisplayLink(target: self, selector: #selector(frame))
     displayLink?.add(to: .main, forMode: .common)
-    focus(id: "machines")
+    focus(id: ProcessInfo.processInfo.environment["IZED_CATALOG_INITIAL_SCENE"] ?? "machines")
   }
   override var prefersStatusBarHidden: Bool { true }
   func resize(id: String, width: CGFloat) {
@@ -62,15 +62,19 @@ final class ComponentHost: UIViewController {
     if gpuiIDs.contains(id) { id.withCString { terminal_catalog_select($0) } }
     layoutSelected()
     windows[key(id)]?.makeKeyAndVisible()
-    if let vc = windows[key(id)]?.rootViewController, !gpuiIDs.contains(id) {
+    if let vc = windows[key(id)]?.rootViewController {
       terminalCatalogActivate(vc, id: id)
     }
     onChange?(id)
   }
   private func layoutSelected() {
     guard let window = windows[key(selectedID)] else { return }
-    window.frame = CGRect(
-      x: 24, y: 60, width: widths[selectedID] ?? 390, height: CGFloat(entry(selectedID).height))
+    if ProcessInfo.processInfo.environment["IZED_CATALOG_FULL_DEVICE"] == "1" {
+      window.frame = window.screen.bounds
+    } else {
+      window.frame = CGRect(
+        x: 24, y: 60, width: widths[selectedID] ?? 390, height: CGFloat(entry(selectedID).height))
+    }
     window.rootViewController?.view.setNeedsLayout()
     window.rootViewController?.view.layoutIfNeeded()
   }
@@ -87,7 +91,8 @@ final class ComponentHost: UIViewController {
       "id": id, "component": e.title, "renderer": e.renderer, "source": e.source,
       "processID": ProcessInfo.processInfo.processIdentifier,
       "width": id == selectedID ? window.bounds.width : widths[id] ?? 390,
-      "height": e.height, "scale": window.screen.scale, "originX": window.frame.minX,
+      "height": id == selectedID ? window.bounds.height : CGFloat(e.height),
+      "scale": window.screen.scale, "originX": window.frame.minX,
       "originY": window.frame.minY,
       "screenWidth": screen.width, "screenHeight": screen.height,
       "layoutRevision": revisions[id, default: 0],

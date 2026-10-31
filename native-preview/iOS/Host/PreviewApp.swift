@@ -25,7 +25,12 @@ final class CatalogScene: UIResponder, UIWindowSceneDelegate {
     window.rootViewController = host
     window.makeKeyAndVisible()
     host.loadViewIfNeeded()
-    host.focus(id: "machines")
+    host.focus(id: ProcessInfo.processInfo.environment["IZED_CATALOG_INITIAL_SCENE"] ?? "machines")
+    if ProcessInfo.processInfo.environment["IZED_CATALOG_SHOW_KEYBOARD"] == "1" {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        gpui_ios_show_keyboard(gpui_ios_get_window())
+      }
+    }
     let server = PreviewServer(component: host)
     self.server = server
     do { try server.start() } catch { print("Catalog server: \(error)") }
