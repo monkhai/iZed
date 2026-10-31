@@ -106,14 +106,23 @@ that roster import includes computers and excludes mobile devices and credential
 public key and **never executes received commands**. It deliberately splits ANSI
 and UTF-8 sequences across packets and records PTY sizes, input, and Ctrl-C.
 
+See [tests/README.md](tests/README.md) for setup, host fingerprint verification,
+and fixture limitations.
+
 Install Paramiko into a temporary Python virtual environment, copy the public-only
 `Documents/device-public-key.pub` from the app container, then start the fixture:
 
 ```sh
-python tests/ssh_fixture.py --bind YOUR_MAC_IP --key phone.pub --events /tmp/ssh-events.jsonl
+python tests/ssh_fixture.py --key phone.pub --events /tmp/ssh-events.jsonl
 ```
 
-Run Xcode tests with `IZED_TEST_HOST=smoke@YOUR_MAC_IP:22222`. The test uses a
-separate host-settings file; the debug-only automatic test connection is enabled
-only when both test launch environment variables are present. Review the fixture
-events as well as the XCTest results and screenshots. Stop the fixture afterward.
+For the live iOS tests, separately forward the fixture machine's Tailscale port 22
+to this loopback listener on port 22222. Run Xcode tests with
+`IZED_TEST_HOST=smoke@FIXTURE_TAILSCALE_IP` (port 22). The tests use the normal
+machine picker after live Tailscale discovery and isolate saved hosts with
+`IZED_PICKER_TEST`; they do not use the automatic smoke-test connection.
+Show the simulator software keyboard before the keyboard-layout test. Start a
+fresh fixture for the host-verification tests and verify its printed fingerprint
+before allowing trust. Review fixture events, XCTest results and screenshots.
+Stop the fixture and forwarding helper afterward; saved Tailscale node state can
+be retained for later runs.

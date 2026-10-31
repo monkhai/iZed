@@ -5,6 +5,7 @@ Requires paramiko. Accepts only that phone's public key. Stop with Ctrl-C.
 """
 import argparse
 import base64
+import hashlib
 import json
 import io
 import socket
@@ -77,11 +78,16 @@ def serve(connection):
             channel.sendall(part)
             time.sleep(0.05)
         pending = bytearray()
+        previous_cr = False
         while True:
             data = channel.recv(4096)
             if not data:
                 break
             for byte in data:
+                if byte == 10 and previous_cr:
+                    previous_cr = False
+                    continue
+                previous_cr = byte == 13
                 if byte == 3:
                     record("control_c")
                     pending.clear()
@@ -91,8 +97,9 @@ def serve(connection):
                     pending.clear()
                     channel.sendall(b"\r\nPHONE_SSH_OK\r\n$ ")
                 elif byte in (8, 127):
-                    pending[:] = pending[:-1]
-                    channel.sendall(b"\b \b")
+                    if pending:
+                        pending[:] = pending[:-1]
+                        channel.sendall(b"\b \b")
                 else:
                     pending.append(byte)
                     channel.sendall(bytes([byte]))
@@ -106,6 +113,8 @@ with socket.socket() as listener:
     listener.bind((args.bind, args.port))
     listener.listen(8)
     print(f"SSH fixture listening on {args.bind}:{args.port}", flush=True)
+    fingerprint = base64.b64encode(hashlib.sha256(host_key.asbytes()).digest()).decode().rstrip("=")
+    print(f"Server host fingerprint: SHA256:{fingerprint}", flush=True)
     while True:
         connection, _ = listener.accept()
         threading.Thread(target=serve, args=(connection,), daemon=True).start()

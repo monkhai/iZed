@@ -1,5 +1,7 @@
 #[cfg(target_os = "ios")]
 mod app;
+#[cfg(target_os = "ios")]
+mod ios_keys;
 mod ssh;
 mod tailnet;
 
