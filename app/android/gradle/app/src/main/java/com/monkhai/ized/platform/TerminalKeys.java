@@ -45,7 +45,10 @@ public final class TerminalKeys {
     }
 
     public static synchronized byte[] load(Context context) throws Exception {
-        AtomicFile file = file(context);
+        return loadRecord(file(context), ALIAS);
+    }
+
+    static byte[] loadRecord(AtomicFile file, String alias) throws Exception {
         byte[] encoded;
         try {
             encoded = file.readFully();
@@ -56,7 +59,7 @@ public final class TerminalKeys {
         if (encoded.length < 1 + IV_LENGTH + 16 || encoded[0] != VERSION) {
             throw new IOException("Invalid SSH identity file");
         }
-        SecretKey wrapping = (SecretKey) keyStore().getKey(ALIAS, null);
+        SecretKey wrapping = (SecretKey) keyStore().getKey(alias, null);
         if (wrapping == null) throw new IOException("SSH wrapping key is missing");
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, wrapping,
@@ -66,14 +69,22 @@ public final class TerminalKeys {
     }
 
     public static synchronized void store(Context context, byte[] plaintext) throws Exception {
+        storeRecord(file(context), ALIAS, plaintext, false);
+    }
+
+    static void storeRecord(AtomicFile file, String alias, byte[] plaintext, boolean replace) throws Exception {
         try {
-            AtomicFile file = file(context);
-            if (!absent(file)) throw new IOException("SSH identity already exists or is unreadable");
+            if (!replace && !absent(file)) throw new IOException("SSH identity already exists or is unreadable");
+            // Existing ciphertext must remain decryptable before replacing credentials.
+            if (replace && !absent(file)) {
+                byte[] previous = loadRecord(file, alias);
+                Arrays.fill(previous, (byte) 0);
+            }
             KeyStore store = keyStore();
-            SecretKey wrapping = (SecretKey) store.getKey(ALIAS, null);
+            SecretKey wrapping = (SecretKey) store.getKey(alias, null);
             if (wrapping == null) {
                 KeyGenerator generator = KeyGenerator.getInstance("AES", "AndroidKeyStore");
-                generator.init(new KeyGenParameterSpec.Builder(ALIAS,
+                generator.init(new KeyGenParameterSpec.Builder(alias,
                         KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                         .setKeySize(256)
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)

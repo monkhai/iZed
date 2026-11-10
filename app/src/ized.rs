@@ -17,6 +17,43 @@ use ui::CommonAnimationExt;
 use util::path_list::PathList;
 use workspace::{AppState, MultiWorkspace, Workspace};
 
+#[cfg(target_os = "android")]
+actions!(ized, [CloseRemoteProject]);
+
+#[cfg(target_os = "android")]
+fn close_active_remote_project(handle: WindowHandle<MultiWorkspace>, cx: &mut App) {
+    // Defer out of the status item's update before removing its workspace.
+    cx.defer(move |cx| {
+        let result = handle.update(cx, |multi, window, cx| {
+            let workspace = multi.workspace().clone();
+            if workspace.read(cx).project().read(cx).remote_client().is_none() {
+                return;
+            }
+            // remove() preserves serializable unsaved buffers for hot exit,
+            // prompts for other dirty items, and honors cancellation before
+            // activating this fallback. It does not implicitly save to disk.
+            multi.remove([workspace], |multi, window, cx| {
+                let app_state = multi.workspace().read(cx).app_state().clone();
+                let project = project::Project::local(
+                    app_state.client.clone(), app_state.node_runtime.clone(),
+                    app_state.user_store.clone(), app_state.languages.clone(),
+                    app_state.fs.clone(), None, Default::default(), cx,
+                );
+                let fallback = cx.new(|cx| Workspace::new(None, project, app_state, window, cx));
+                let pane = fallback.read(cx).active_pane().clone();
+                pane.update(cx, |pane, cx| {
+                    pane.set_should_display_welcome_page(true);
+                    cx.notify();
+                });
+                Task::ready(Ok(fallback))
+            }, window, cx).detach_and_log_err(cx);
+        });
+        if let Err(error) = result {
+            log::error!("Could not close remote project: {error:#}");
+        }
+    });
+}
+
 struct SshConnectionStatus {
     client: Entity<RemoteClient>,
     _model_memory: Option<Entity<ProjectModelMemory>>,
@@ -72,10 +109,27 @@ impl SshConnectionStatus {
 
 impl Render for SshConnectionStatus {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Keep the connected machine visible: a silent status bar made local
+        // and remote workspaces indistinguishable during the Android live test.
+        let client = self.client.read(cx);
+        #[cfg(target_os = "android")]
+        if client.connection_state() == ConnectionState::Connected {
+            return h_flex().gap_2()
+                .child(Label::new(format!("Connected: {}", client.connection_options().display_name())))
+                .when(cfg!(target_os = "android"), |this| this.child(
+                    Button::new("close-remote-project", "Close Remote Project")
+                        .on_click(|_, window, cx| {
+                            if let Some(handle) = window.window_handle().downcast::<MultiWorkspace>() {
+                                close_active_remote_project(handle, cx);
+                            }
+                        })
+                ))
+                .into_any_element();
+        }
         if !self.show_transient {
             return Empty.into_any_element();
         }
-        let message = match self.client.read(cx).connection_state() {
+        let message = match client.connection_state() {
             ConnectionState::Connected => return Empty.into_any_element(),
             ConnectionState::Connecting | ConnectionState::Reconnecting => "Reconnecting to Machine…",
             ConnectionState::HeartbeatMissed => "Connection interrupted…",
@@ -127,11 +181,24 @@ fn ipad_picker_button(
         .height(px(44.).into())
 }
 
+/// Keep platform storage outside the shared workspace and rendering logic.
+fn app_documents_dir() -> PathBuf {
+    #[cfg(target_os = "android")]
+    { crate::android_terminal::data_dir() }
+    #[cfg(target_os = "ios")]
+    { std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("Documents") }
+}
+
 fn bundled_server_archives() -> anyhow::Result<PathBuf> {
+    #[cfg(target_os = "android")]
+    { return crate::android_ide::server_archives(); }
+    #[cfg(target_os = "ios")]
+    {
     let bundle = std::env::current_exe()?;
     Ok(bundle.parent()
         .ok_or_else(|| anyhow::anyhow!("Could not locate the iZed app bundle"))?
         .join("RemoteServers"))
+    }
 }
 
 fn server_progress_indicator(progress: (remote::SshServerPhase, u64, u64), cx: &App) -> impl IntoElement {
@@ -220,10 +287,7 @@ impl Default for SshTarget {
 
 impl SshTarget {
     fn config_path() -> PathBuf {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir);
-        home.join("Documents").join("ssh-target.json")
+        app_documents_dir().join("ssh-target.json")
     }
 
     fn load() -> Self {
@@ -262,7 +326,7 @@ impl SshTarget {
         anyhow::ensure!(options.username.is_some(), "Enter a username, as user@host");
         anyhow::ensure!(
             options.args.as_ref().is_none_or(Vec::is_empty) && options.port_forwards.is_none(),
-            "This iPad SSH transport supports user@host and an optional port only"
+            if cfg!(target_os = "android") { "SSH connections support user@host and an optional port only" } else { "This iPad SSH transport supports user@host and an optional port only" }
         );
         anyhow::ensure!(
             PathBuf::from(&self.folder).is_absolute(),
@@ -904,8 +968,14 @@ impl Render for SshTargetModal {
             .on_action(cx.listener(Self::accept_suggestion))
             .on_action(cx.listener(Self::select_directory))
             .when(self.embedded, |this| this.w_full().h_full().justify_between())
+            .when(self.embedded && cfg!(target_os = "android"), |this| {
+                this.flex_1().min_h_0().overflow_hidden().gap_2()
+            })
             .when(!self.embedded, |this| this.w(rems(34.)).elevation_2(cx).p_3().gap_2())
             .child(v_flex().gap_2()
+            .when(self.embedded && cfg!(target_os = "android"), |this| {
+                this.flex_1().min_h_0().overflow_hidden()
+            })
             .child(Label::new(if self.fixed_address { "Browse Directories" } else { "Open SSH Project" }).size(LabelSize::Large))
             .when(!self.fixed_address, |this| this
                 .child(Label::new("SSH address").color(Color::Muted))
@@ -926,7 +996,10 @@ impl Render for SshTargetModal {
             })
             .child(Label::new("Directories").color(Color::Muted))
             .child(v_flex().id("ssh-directory-list")
-                .when(self.embedded, |this| this.h(rems(28.)))
+                // The IME may leave less height than the old fixed 28rem list.
+                // Give the list only the space left after its header and footer.
+                .when(self.embedded && cfg!(target_os = "android"), |this| this.flex_1().min_h_0())
+                .when(self.embedded && !cfg!(target_os = "android"), |this| this.h(rems(28.)))
                 .when(!self.embedded, |this| this.max_h(rems(20.)))
                 .overflow_y_scroll()
                 .track_scroll(&self.suggestion_scroll)
@@ -948,6 +1021,7 @@ impl Render for SshTargetModal {
                 this.child(Label::new(error).color(Color::Error))
             }))
             .child(h_flex().w_full().justify_between()
+                .when(self.embedded && cfg!(target_os = "android"), |this| this.flex_shrink_0().flex_wrap().gap_2())
                 .when(self.embedded, |this| this.child(
                     ipad_picker_button("back-to-machine-projects", "Back to Projects", window, cx)
                         .on_click(cx.listener(|_, _, _, cx| cx.emit(DirectoryBrowserEvent::Back))),
@@ -1581,6 +1655,13 @@ impl MachinePicker {
     }
 
     fn switch_column(&mut self, _: &PickerSwitchColumn, window: &mut Window, cx: &mut Context<Self>) {
+        if cfg!(target_os = "android") && self.stage == PickerStage::Add {
+            // The add/edit form has two text fields, so forward and reverse
+            // traversal both switch to the other field without submitting it.
+            if self.address_focused { self.machine_name.focus_handle(cx).focus(window, cx); }
+            else { self.machine_address.focus_handle(cx).focus(window, cx); }
+            return;
+        }
         if self.stage != PickerStage::Browse { return; }
         if self.focused_projects { self.machine_search.focus_handle(cx).focus(window, cx); }
         else if self.current_machine(cx).is_some() { self.project_search.focus_handle(cx).focus(window, cx); }
@@ -1597,6 +1678,15 @@ impl workspace::ModalView for MachinePicker {
 
 impl Render for MachinePicker {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Keep the iPad layout on wide windows; phones navigate the same
+        // picker states as a single column instead of squeezing two panels.
+        let compact = cfg!(target_os = "android") && window.viewport_size().width < px(700.);
+        // Bare modals are absolutely positioned relative to the window, so
+        // MultiWorkspace's safe-area padding does not constrain this overlay.
+        #[cfg(target_os = "android")]
+        let insets = cx.try_global::<workspace::AndroidWindowInsets>()
+            .map(|provider| (provider.0)()).unwrap_or_default();
+        let details = self.stage != PickerStage::Browse || self.focused_projects;
         let machines = self.visible_machines(cx);
         let projects = self.visible_projects(cx);
         let machine_name = self.current_machine(cx).map(|machine| machine.name.clone());
@@ -1623,7 +1713,12 @@ impl Render for MachinePicker {
         h_flex()
             .absolute()
             .inset_0()
-            .size_full()
+            .map(|this| {
+                #[cfg(target_os = "android")]
+                { this.top(insets.top).bottom(insets.bottom).left(insets.left).right(insets.right) }
+                #[cfg(not(target_os = "android"))]
+                { this.size_full() }
+            })
             .items_center()
             .justify_center()
             .p_4()
@@ -1638,12 +1733,24 @@ impl Render for MachinePicker {
             .on_action(cx.listener(Self::edit_machine))
             .on_action(cx.listener(Self::prompt_remove_machine))
             .child(h_flex().w_full().h(rems(42.)).items_start()
+            .when(cfg!(target_os = "android"), |this| this.max_h_full())
+            .when(compact, |this| this.h_full())
             .rounded_md().border_1().border_color(cx.theme().colors().border)
             .elevation_2(cx)
-            .child(v_flex().w(rems(26.)).h_full().p_4().pb_2().justify_between()
+            .when(!compact || !details, |this| this.child(v_flex().w(rems(26.)).h_full().p_4().pb_2().justify_between()
+                .when(cfg!(target_os = "android"), |this| this.min_h_0().gap_3())
                 .border_r_1().border_color(cx.theme().colors().border)
-                .child(v_flex().gap_2()
+                .when(compact, |this| this.w_full().border_r_0().justify_start().gap_4())
+                .child(v_flex().gap_2().id("machine-picker-machines-content")
+                    .when(cfg!(target_os = "android"), |this| this.flex_1().min_h_0().overflow_y_scroll())
                     .child(Label::new("Machines").size(LabelSize::Large))
+                    .map(|header| {
+                        #[cfg(target_os = "android")]
+                        { header.child(Button::new("network-settings", "Network Settings")
+                            .on_click(|_, _, _| crate::android_ide::network_settings())) }
+                        #[cfg(target_os = "ios")]
+                        { header }
+                    })
                     .child(div().w_full().p_2().rounded_sm().border_1()
                         .border_color(cx.theme().colors().border)
                         .child(self.machine_search.clone()))
@@ -1661,13 +1768,21 @@ impl Render for MachinePicker {
                     .height(px(44.))
                     .inset(true).child(Label::new("+ Add Machine"))
                     .on_click(cx.listener(|this, _, window, cx| this.add_machine(window, cx))))
-            )
-            .child(v_flex().flex_1().h_full().p_4().pb_2().justify_between()
+            ))
+            .when(!compact || details, |this| this.child(v_flex().flex_1().when(cfg!(target_os = "android"), |this| this.min_w_0()).h_full().p_4().pb_2().justify_between()
+                .when(cfg!(target_os = "android"), |this| this.min_h_0().gap_3())
+                .when(compact, |this| this.justify_start().gap_4()
+                    .child(ui::ListItem::new("picker-back").height(px(44.)).inset(true)
+                        .child(Label::new("Back"))
+                        .on_click(cx.listener(|this, _, window, cx| this.back(&PickerBack, window, cx)))))
                 .when(self.stage == PickerStage::Directories, |this| {
                     this.when_some(self.directory_browser.clone(), |this, browser| this.child(browser))
                 })
                 .when(self.stage != PickerStage::Directories, |this| this
-                .child(v_flex().gap_3()
+                // Keep the action footer above the IME; scroll the form/list
+                // instead of allowing its intrinsic height to push it out.
+                .child(v_flex().gap_3().id("machine-picker-details-content")
+                    .when(cfg!(target_os = "android"), |this| this.flex_1().min_h_0().overflow_y_scroll())
                 .when(self.stage == PickerStage::Browse, |this| {
                     this.child(Label::new(machine_name.map(|name| format!("Projects on {name}")).unwrap_or_else(|| "Select a Machine".into())))
                         .when(self.current_machine(cx).is_some(), |this| this.child(
@@ -1722,7 +1837,7 @@ impl Render for MachinePicker {
                         .child(Label::new(self.verification_command()))
                 })
                 .when(self.stage == PickerStage::Authorize, |this| {
-                    this.child(Label::new("Allow This iPad"))
+                    this.child(Label::new(if cfg!(target_os = "android") { "Allow This Device" } else { "Allow This iPad" }))
                         .when(!self.busy, |this| this.child(Label::new("Run the setup command on the machine as the SSH user, then check access.").color(Color::Muted)))
                 })
                 .when(self.stage == PickerStage::ConfirmRemove, |this| {
@@ -1731,7 +1846,10 @@ impl Render for MachinePicker {
                 })
                 .when_some(self.error.clone(), |this, error| this.child(Label::new(error).color(Color::Error))))
                 .child(h_flex().relative().w_full().items_center().justify_end()
-                    .child(v_flex().absolute().left_0().top_0().h_full().w(rems(30.)).justify_center()
+                    .when(cfg!(target_os = "android"), |this| this.flex_shrink_0())
+                    .when(compact, |this| this.flex_col().items_start().gap_3())
+                    .child(v_flex().when(!compact, |this| this.absolute().left_0().top_0().h_full().w(rems(30.)))
+                        .when(compact, |this| this.w_full()).justify_center()
                         .when(self.stage == PickerStage::Browse && self.current_machine(cx).is_some(), |this| this
                             .child(div().relative().w_full().h(px(44.))
                                 .child(ui::ButtonLike::new("check-saved-machine")
@@ -1752,7 +1870,7 @@ impl Render for MachinePicker {
                                             .bg(cx.theme().colors().border_focused))))))
                         .when(self.stage == PickerStage::Authorize, |this| this
                             .when_some(server_progress, |this, progress| this.child(server_progress_indicator(progress, cx)))))
-                    .child(h_flex().gap_2()
+                    .child(h_flex().gap_2().when(compact, |this| this.flex_wrap())
                     .when(self.stage == PickerStage::Browse && self.current_machine(cx).is_some(), |this| this
                         .child(ipad_picker_button("edit-selected-machine", "Edit Machine", window, cx)
                             .on_click(cx.listener(|this, _, window, cx| this.edit_machine(&PickerEditMachine, window, cx))))
@@ -1774,7 +1892,7 @@ impl Render for MachinePicker {
                     .when(self.stage == PickerStage::ConfirmRemove, |this| this
                         .child(ipad_picker_button("confirm-remove-machine", "Remove Machine", window, cx)
                             .on_click(cx.listener(|this, _, window, cx| this.remove_machine(window, cx))))))))
-            ))
+            )))
     }
 }
 
@@ -2022,7 +2140,7 @@ fn open_ssh_project(
         .await;
         if let Err(error) = result {
             log::error!("Could not open Zed SSH workspace: {error:#}");
-            let message = error.to_string();
+            let message = if cfg!(target_os = "android") { format!("{error:#}") } else { error.to_string() };
             let picker_is_visible = window.update(cx, |multi, _, cx| {
                 multi.workspace().read(cx).active_modal::<MachinePicker>(cx).is_some()
             }).unwrap_or(false);
@@ -2104,14 +2222,18 @@ fn ensure_preview_theme_in_settings() {
 }
 
 pub fn open(cx: &mut App) {
+    #[cfg(target_os = "android")]
+    cx.set_global(workspace::AndroidWindowInsets(|| {
+        let insets = ized_platform::android::jni::platform()
+            .and_then(|platform| platform.primary_window())
+            .map(|window| window.safe_area_insets_logical()).unwrap_or_default();
+        gpui::Edges { top: px(insets.top), bottom: px(insets.bottom),
+            left: px(insets.left), right: px(insets.right) }
+    }));
     // Zed's desktop data paths resolve under hidden home directories, which
     // iPadOS does not let this app create. Keep its database and agent threads
     // together in the app's writable Documents container.
-    let zed_data_dir = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("Documents")
-        .join("Zed");
+    let zed_data_dir = app_documents_dir().join("Zed");
     paths::set_custom_data_dir(zed_data_dir.to_string_lossy().as_ref());
     if let Err(error) = std::fs::create_dir_all(paths::config_dir()) {
         log::error!("Could not create iPad Zed config directory: {error}");
@@ -2228,6 +2350,12 @@ pub fn open(cx: &mut App) {
     let prompt_builder = prompt_store::PromptBuilder::load(app_state.fs.clone(), false, cx);
     project::AgentRegistryStore::init_global(cx, app_state.fs.clone(), app_state.client.http_client());
     agent_ui::init(app_state.fs.clone(), prompt_builder, app_state.languages.clone(), false, false, cx);
+    #[cfg(target_os = "android")]
+    cx.on_action(|_: &CloseRemoteProject, cx| {
+        if let Some(handle) = cx.active_window().and_then(|window| window.downcast::<MultiWorkspace>()) {
+            close_active_remote_project(handle, cx);
+        }
+    });
     let remote_action_state = app_state.clone();
     let remote_action_window: Rc<RefCell<Option<WindowHandle<MultiWorkspace>>>> =
         Rc::new(RefCell::new(None));
@@ -2279,6 +2407,8 @@ pub fn open(cx: &mut App) {
     command_palette::init(cx);
     command_palette_hooks::CommandPaletteFilter::update_global(cx, |filter, _| {
         filter.show_only_action_names([
+            #[cfg(target_os = "android")]
+            "ized::CloseRemoteProject",
             "file_finder::Toggle",
             "workspace::NewFile",
             "workspace::Save",
@@ -2371,13 +2501,25 @@ pub fn open(cx: &mut App) {
     vim::init(cx);
     // iPad hardware keyboards use Command for app shortcuts, as on macOS.
     // settings::DEFAULT_KEYMAP_PATH falls back to Linux on iOS.
-    for path in ["keymaps/default-macos.json", settings::VIM_KEYMAP_PATH] {
+    let default_keymap = if cfg!(target_os = "android") {
+        "keymaps/default-linux.json"
+    } else {
+        "keymaps/default-macos.json"
+    };
+    for path in [default_keymap, settings::VIM_KEYMAP_PATH] {
         match settings::KeymapFile::load_asset_allow_partial_failure(path, cx) {
             Ok(bindings) => cx.bind_keys(bindings),
             Err(error) => log::warn!("Could not load {path}: {error}"),
         }
     }
-    match settings::KeymapFile::load(include_str!("../keymaps/ized-macos.jsonc"), cx) {
+    let keymap = include_str!("../keymaps/ized-macos.jsonc");
+    // Keep the same actions while using Android's conventional shortcut modifier.
+    let keymap = if cfg!(target_os = "android") {
+        Cow::Owned(keymap.replace("cmd-", "ctrl-"))
+    } else {
+        Cow::Borrowed(keymap)
+    };
+    match settings::KeymapFile::load(&keymap, cx) {
         settings::KeymapFileLoadResult::Success { key_bindings } => cx.bind_keys(key_bindings),
         settings::KeymapFileLoadResult::SomeFailedToLoad {
             key_bindings,
@@ -2404,6 +2546,8 @@ pub fn open(cx: &mut App) {
         KeyBinding::new("enter", PickerAccept, Some("MachinePicker > (Editor && !SshTargetModal)")),
         KeyBinding::new("escape", PickerBack, Some("MachinePicker")),
         KeyBinding::new("tab", PickerSwitchColumn, Some("MachinePicker > (Editor && !SshTargetModal)")),
+        #[cfg(target_os = "android")]
+        KeyBinding::new("shift-tab", PickerSwitchColumn, Some("MachinePicker > (Editor && !SshTargetModal)")),
         KeyBinding::new("cmd-e", PickerEditMachine, Some("MachinePicker")),
         KeyBinding::new("cmd-backspace", PickerRemoveMachine, Some("MachinePicker")),
     ]);
@@ -2423,7 +2567,8 @@ pub fn open(cx: &mut App) {
         let workspace = cx.new(|cx| Workspace::new(None, project, app_state, window, cx));
         let initial_pane = workspace.read(cx).active_pane().clone();
         initial_pane.update(cx, |pane, cx| {
-            pane.set_should_display_welcome_page(false);
+            // Dismissing the initial picker must leave a touch-accessible way back.
+            pane.set_should_display_welcome_page(cfg!(target_os = "android"));
             cx.notify();
         });
         cx.new(|cx| MultiWorkspace::new(workspace, window, cx))

@@ -1,7 +1,8 @@
-//! iZed's iPad host for Zed's remote workspace.
+//! iZed's mobile host for Zed's remote workspace.
 //!
 //! The iOS app registers [`ized`] as its GPUI root view. The inherited
-//! Android host opens the terminal UI milestone; the demo views remain in [`screens`].
+//! Android host uses the same workspace with `--features ized`, or Beam by default.
+//! The demo views remain in [`screens`].
 //! Build instructions for a physical iPad are in the repository README.
 
 // Link ized-platform so its symbols (jni helpers, platform, etc.) are available.
@@ -12,6 +13,8 @@ pub mod screens;
 
 #[cfg(target_os = "android")]
 mod android_keys;
+#[cfg(all(target_os = "android", feature = "ized"))]
+mod android_ide;
 #[cfg(target_os = "android")]
 mod android_terminal;
 #[cfg(target_os = "android")]
@@ -26,7 +29,7 @@ mod ssh;
 #[path = "../../terminal-app/src/tailnet.rs"]
 mod tailnet;
 
-#[cfg(all(target_os = "ios", feature = "ized"))]
+#[cfg(all(any(target_os = "ios", target_os = "android"), feature = "ized"))]
 mod ized;
 
 #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -92,7 +95,15 @@ fn android_main(app: android_activity::AndroidApp) {
     // valid — solving the lifetime mismatch that previously caused
     // `default_prevented=false` on touch events and potential crashes.
     Application::with_platform(shared.into_rc()).with_assets(assets::Assets).run(|cx: &mut App| {
-        log::info!("Application::run callback — opening Android terminal UI");
+        #[cfg(feature = "ized")]
+        {
+            if let Err(error) = android_ide::initialize() {
+                log::error!("Could not initialize Android workspace transport: {error}");
+                return;
+            }
+            ized::open(cx);
+        }
+        #[cfg(not(feature = "ized"))]
         terminal_app::open(cx);
     });
 

@@ -47,6 +47,14 @@ public class GpuiActivity extends NativeActivity {
         // methods. Reading the library name from the manifest meta-data ensures
         // we stay in sync with the nativeLibraryName placeholder.
         if (!sNativeLibLoaded) {
+            // Android app UIDs have no passwd home. Configure the native
+            // process before loading Rust or starting its worker threads so
+            // shared POSIX libraries resolve home paths inside app storage.
+            try {
+                android.system.Os.setenv("HOME", getNoBackupFilesDir().getAbsolutePath(), true);
+            } catch (android.system.ErrnoException error) {
+                throw new IllegalStateException("Could not configure app-private home", error);
+            }
             try {
                 ActivityInfo ai = getPackageManager().getActivityInfo(
                         getComponentName(), PackageManager.GET_META_DATA);
@@ -132,6 +140,8 @@ public class GpuiActivity extends NativeActivity {
 
     @Override
     protected void onDestroy() {
+        GpuiPrompt.destroy(this);
+        GpuiTextInput.destroy();
         TerminalUi.destroy();
         // Release media session when activity is destroyed.
         GpuiMediaSession.release();
@@ -154,7 +164,7 @@ public class GpuiActivity extends NativeActivity {
         Uri data = intent.getData();
         if (data != null) {
             String url = data.toString();
-            Log.i("GpuiActivity", "onNewIntent deeplink: " + url);
+            Log.i("GpuiActivity", "Received app link");
             try {
                 nativeOnDeepLink(url);
             } catch (UnsatisfiedLinkError e) {

@@ -329,7 +329,7 @@ pub fn android_key_to_keystroke(
 
     // Determine the character representation.
     let key_char = if unicode_char != 0 {
-        char::from_u32(unicode_char).map(|c| c.to_string())
+        char::from_u32(unicode_char).filter(|c| !c.is_control()).map(|c| c.to_string())
     } else if key.len() == 1 {
         // For single-char keys, derive the char from the key name,
         // applying shift for letters.
@@ -564,6 +564,18 @@ mod tests {
         let ks = android_key_to_keystroke(AKEYCODE_ENTER, AMETA_NONE, 0).unwrap();
         assert_eq!(ks.key, "enter");
         assert_eq!(ks.key_char, None);
+    }
+
+    #[test]
+    fn control_characters_are_not_text_input() {
+        for (code, character, modifiers) in [
+            (AKEYCODE_ESCAPE, 27, AMETA_NONE),
+            (AKEYCODE_ENTER, 10, AMETA_NONE),
+            (AKEYCODE_S, 19, AMETA_CTRL_ON),
+        ] {
+            let key = android_key_to_keystroke(code, modifiers, character).unwrap();
+            assert_eq!(key.key_char, None);
+        }
     }
 
     #[test]

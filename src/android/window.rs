@@ -399,7 +399,11 @@ impl AndroidWindow {
             height,
             scale_factor,
             safe_area_insets: SafeAreaInsets::default(),
-            appearance: WindowAppearance::Light,
+            appearance: if super::jni::query_night_mode_via_jni() {
+                WindowAppearance::Dark
+            } else {
+                WindowAppearance::Light
+            },
             is_active: true,
             transparent,
             request_frame_callback: None,
@@ -1015,14 +1019,13 @@ impl AndroidWindow {
 
     // ── GPU introspection ─────────────────────────────────────────────────────
 
-    /// Whether the GPU supports dual-source blending (subpixel text AA).
+    /// Whether this Android window enables subpixel text AA.
     pub fn supports_subpixel_aa(&self) -> bool {
-        self.state
-            .lock()
-            .renderer
-            .as_ref()
-            .map(|r| r.supports_dual_source_blending())
-            .unwrap_or(false)
+        // Use grayscale coverage even when the GPU advertises dual-source
+        // blending. This avoids missing terminal glyphs observed on Samsung
+        // during typing; the grayscale path was verified on the affected tablet.
+        // Keep this Android-only: it does not establish a general GPU driver bug.
+        false
     }
 
     // ── private helpers ───────────────────────────────────────────────────────
@@ -1089,7 +1092,7 @@ impl Drop for AndroidWindow {
 pub struct AndroidPlatformWindow {
     window: Arc<AndroidWindow>,
     display: Option<Rc<dyn PlatformDisplay>>,
-    input_handler: Option<PlatformInputHandler>,
+    input_handler: Rc<RefCell<Option<PlatformInputHandler>>>,
     title: String,
     /// Shared momentum scrolling state — used by both the touch callback
     /// (to start/cancel flings) and the frame callback (to pump inertia).
@@ -1099,6 +1102,8 @@ pub struct AndroidPlatformWindow {
     /// replaced when `on_input` is called.
     momentum_input_cb:
         Arc<Mutex<Box<dyn FnMut(gpui::PlatformInput) -> DispatchEventResult + Send>>>,
+    /// Keeps this wrapper registered as the activity's single GPUI window.
+    registration: Option<Arc<()>>,
 }
 
 impl AndroidPlatformWindow {
@@ -1107,10 +1112,12 @@ impl AndroidPlatformWindow {
         // No-op input callback used until on_input is called.
         let noop_input_cb: Box<dyn FnMut(gpui::PlatformInput) -> DispatchEventResult + Send> =
             Box::new(|_| DispatchEventResult::default());
+        let input_handler = Rc::new(RefCell::new(None));
+        IME_HANDLER.with(|slot| *slot.borrow_mut() = Rc::downgrade(&input_handler));
         Self {
             window,
             display,
-            input_handler: None,
+            input_handler,
             title: String::new(),
             momentum: Arc::new(Mutex::new(MomentumState {
                 velocity_tracker: VelocityTracker::new(),
@@ -1123,7 +1130,13 @@ impl AndroidPlatformWindow {
                 pending_scroll_phase: gpui::TouchPhase::Moved,
             })),
             momentum_input_cb: Arc::new(Mutex::new(noop_input_cb)),
+            registration: None,
         }
+    }
+
+    pub(crate) fn with_registration(mut self, registration: Arc<()>) -> Self {
+        self.registration = Some(registration);
+        self
     }
 
     /// Access the underlying `AndroidWindow`.
@@ -1226,23 +1239,21 @@ impl PlatformWindow for AndroidPlatformWindow {
     }
 
     fn set_input_handler(&mut self, input_handler: PlatformInputHandler) {
-        self.input_handler = Some(input_handler);
+        *self.input_handler.borrow_mut() = Some(input_handler);
     }
 
     fn take_input_handler(&mut self) -> Option<PlatformInputHandler> {
-        self.input_handler.take()
+        self.input_handler.borrow_mut().take()
     }
 
     fn prompt(
         &self,
         _level: PromptLevel,
-        _msg: &str,
-        _detail: Option<&str>,
-        _answers: &[PromptButton],
+        msg: &str,
+        detail: Option<&str>,
+        answers: &[PromptButton],
     ) -> Option<oneshot::Receiver<usize>> {
-        // Android prompts would require JNI calls to show an AlertDialog.
-        // Return None to indicate the platform cannot show prompts natively.
-        None
+        super::prompts::show(msg, detail, answers)
     }
 
     fn activate(&self) {
@@ -1466,6 +1477,7 @@ impl PlatformWindow for AndroidPlatformWindow {
             /// Distance (logical px) the finger must travel before a touch
             /// is promoted from a potential tap to a scroll gesture.
             const SCROLL_SLOP: f32 = 8.0;
+            const HOLD_NS: i64 = 400_000_000;
 
             /// Tracks the current touch gesture.
             #[derive(Clone, Copy, Debug)]
@@ -1473,7 +1485,13 @@ impl PlatformWindow for AndroidPlatformWindow {
                 /// No active touch.
                 Idle,
                 /// Finger is down but hasn't moved beyond the slop threshold.
-                Pending { start_x: f32, start_y: f32 },
+                Pending {
+                    start_x: f32,
+                    start_y: f32,
+                    since: i64,
+                },
+                /// A hold followed by movement selects text instead of scrolling.
+                Selecting,
                 /// Finger has moved beyond the threshold — we are scrolling.
                 Scrolling { prev_x: f32, prev_y: f32 },
             }
@@ -1507,6 +1525,7 @@ impl PlatformWindow for AndroidPlatformWindow {
                         *ts = TouchState::Pending {
                             start_x: logical_x,
                             start_y: logical_y,
+                            since: touch.event_time_ns,
                         };
                         // Do NOT emit MouseDown here — wait until we know
                         // whether this is a tap or a scroll.  Emitting
@@ -1536,11 +1555,37 @@ impl PlatformWindow for AndroidPlatformWindow {
                         ms.velocity_tracker.record(logical_x, logical_y);
 
                         match *ts {
-                            TouchState::Pending { start_x, start_y } => {
+                            TouchState::Pending {
+                                start_x,
+                                start_y,
+                                since,
+                            } => {
                                 let dx = logical_x - start_x;
                                 let dy = logical_y - start_y;
                                 let distance = (dx * dx + dy * dy).sqrt();
 
+                                if distance > SCROLL_SLOP
+                                    && touch.event_time_ns.saturating_sub(since) >= HOLD_NS
+                                {
+                                    *ts = TouchState::Selecting;
+                                    drop(ms);
+                                    let position =
+                                        gpui::point(gpui::px(logical_x), gpui::px(logical_y));
+                                    let mut guard = cb.lock();
+                                    guard(gpui::PlatformInput::MouseDown(gpui::MouseDownEvent {
+                                        button: gpui::MouseButton::Left,
+                                        position: gpui::point(gpui::px(start_x), gpui::px(start_y)),
+                                        modifiers,
+                                        click_count: 1,
+                                        first_mouse: false,
+                                    }));
+                                    guard(gpui::PlatformInput::MouseMove(gpui::MouseMoveEvent {
+                                        position,
+                                        modifiers,
+                                        pressed_button: Some(gpui::MouseButton::Left),
+                                    }));
+                                    return;
+                                }
                                 if distance > SCROLL_SLOP {
                                     // Promote to scrolling — accumulate the
                                     // first scroll delta from the start pos.
@@ -1576,6 +1621,7 @@ impl PlatformWindow for AndroidPlatformWindow {
                                 }
                                 ms.has_pending_scroll = true;
                             }
+                            TouchState::Selecting => {}
                             TouchState::Idle => {
                                 // Spurious move without a preceding down — ignore.
                             }
@@ -1596,12 +1642,48 @@ impl PlatformWindow for AndroidPlatformWindow {
                         }));
                     }
 
-                    // ── ACTION_UP / ACTION_CANCEL ────────────────────────
-                    1 | 3 => {
+                    // ── ACTION_CANCEL ────────────────────────────────────
+                    3 => {
+                        let selecting = matches!(*ts, TouchState::Selecting);
+                        let scrolling = matches!(*ts, TouchState::Scrolling { .. });
+                        *ts = TouchState::Idle;
+                        let mut ms = momentum.lock();
+                        ms.scroller.cancel();
+                        ms.velocity_tracker.reset();
+                        ms.has_pending_scroll = false;
+                        ms.pending_scroll_dx = 0.0;
+                        ms.pending_scroll_dy = 0.0;
+                        drop(ms);
+                        let position = gpui::point(gpui::px(logical_x), gpui::px(logical_y));
+                        if selecting {
+                            cb.lock()(gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
+                                button: gpui::MouseButton::Left,
+                                position,
+                                modifiers,
+                                click_count: 1,
+                            }));
+                        } else if scrolling {
+                            cb.lock()(gpui::PlatformInput::ScrollWheel(gpui::ScrollWheelEvent {
+                                position,
+                                modifiers,
+                                delta: gpui::ScrollDelta::Pixels(gpui::point(
+                                    gpui::px(0.),
+                                    gpui::px(0.),
+                                )),
+                                touch_phase: gpui::TouchPhase::Ended,
+                            }));
+                        }
+                    }
+                    // ── ACTION_UP ────────────────────────────────────────
+                    1 => {
                         let position = gpui::point(gpui::px(logical_x), gpui::px(logical_y));
 
                         match *ts {
-                            TouchState::Pending { start_x, start_y } => {
+                            TouchState::Pending {
+                                start_x,
+                                start_y,
+                                since,
+                            } => {
                                 // Finger lifted without exceeding slop →
                                 // this is a tap.  Emit MouseDown + MouseUp
                                 // together at the original down position so
@@ -1612,21 +1694,33 @@ impl PlatformWindow for AndroidPlatformWindow {
                                     ms.has_pending_scroll = false;
                                 }
                                 let tap_pos = gpui::point(gpui::px(start_x), gpui::px(start_y));
+                                let button = if touch.event_time_ns.saturating_sub(since) >= HOLD_NS
+                                {
+                                    gpui::MouseButton::Right
+                                } else {
+                                    gpui::MouseButton::Left
+                                };
                                 let mut guard = cb.lock();
                                 let _ =
                                     guard(gpui::PlatformInput::MouseDown(gpui::MouseDownEvent {
-                                        button: gpui::MouseButton::Left,
+                                        button,
                                         position: tap_pos,
                                         modifiers,
                                         click_count: 1,
                                         first_mouse: false,
                                     }));
                                 let _ = guard(gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
-                                    button: gpui::MouseButton::Left,
+                                    button,
                                     position: tap_pos,
                                     modifiers,
                                     click_count: 1,
                                 }));
+                                drop(guard);
+                                if button == gpui::MouseButton::Left {
+                                    // The tap may change focus. Defer the handler check
+                                    // until the next completed frame installs its input handler.
+                                    IME_SHOW_ON_TAP.with(|pending| pending.set(true));
+                                }
                             }
                             TouchState::Scrolling { prev_x, prev_y } => {
                                 // End the active touch-scroll gesture.
@@ -1670,6 +1764,14 @@ impl PlatformWindow for AndroidPlatformWindow {
                                 // MouseUp for interactive screens (Animations
                                 // drag-to-throw, Shaders touch release).
                                 let _ = guard(gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
+                                    button: gpui::MouseButton::Left,
+                                    position,
+                                    modifiers,
+                                    click_count: 1,
+                                }));
+                            }
+                            TouchState::Selecting => {
+                                cb.lock()(gpui::PlatformInput::MouseUp(gpui::MouseUpEvent {
                                     button: gpui::MouseButton::Left,
                                     position,
                                     modifiers,
@@ -1724,11 +1826,18 @@ impl PlatformWindow for AndroidPlatformWindow {
                     None => return, // Modifier-only or unmapped key
                 };
 
+                let text = keystroke.key_char.clone().filter(|_| {
+                    !keystroke.modifiers.control
+                        && !keystroke.modifiers.alt
+                        && !keystroke.modifiers.platform
+                });
                 let event = if key_event.action == AKEY_EVENT_ACTION_DOWN {
                     gpui::PlatformInput::KeyDown(gpui::KeyDownEvent {
                         keystroke,
                         is_held: false,
-                        prefer_character_input: key_event.unicode_char != 0,
+                        // Hardware keys must reach editor bindings (including
+                        // Vim and shortcuts); IME commits use their own path.
+                        prefer_character_input: false,
                     })
                 } else if key_event.action == AKEY_EVENT_ACTION_UP {
                     gpui::PlatformInput::KeyUp(gpui::KeyUpEvent { keystroke })
@@ -1736,8 +1845,19 @@ impl PlatformWindow for AndroidPlatformWindow {
                     return; // ACTION_MULTIPLE or unknown
                 };
 
-                let mut guard = cb.lock();
-                let _ = guard(event);
+                let result = { cb.lock()(event) };
+                if key_event.action == AKEY_EVENT_ACTION_DOWN
+                    && result.propagate
+                    && !result.default_prevented
+                {
+                    if let Some(text) = text {
+                        with_ime_handler(|handler| {
+                            if handler.query_accepts_text_input() {
+                                handler.replace_text_in_range(None, &text);
+                            }
+                        });
+                    }
+                }
             });
         }
     }
@@ -2180,6 +2300,7 @@ mod tests {
         });
 
         w.handle_touch(TouchPoint {
+            event_time_ns: 0,
             id: 1,
             x: 100.0,
             y: 200.0,
@@ -2259,14 +2380,228 @@ mod tests {
     }
 
     #[test]
-    fn subpixel_aa_false_for_headless() {
-        let w = AndroidWindow::headless(1080, 1920, 2.0);
-        assert!(!w.supports_subpixel_aa());
+    fn grayscale_fallback_at_integer_and_fractional_density() {
+        for scale in [2.0, 2.375] {
+            let w = AndroidWindow::headless(1080, 1920, scale);
+            assert!(!w.supports_subpixel_aa());
+        }
     }
 
     #[test]
     fn gpu_info_none_for_headless() {
         let w = AndroidWindow::headless(1080, 1920, 2.0);
         assert!(w.gpu_info().is_none());
+    }
+}
+
+// Accessed only on the native event-loop thread. Never hold a RefCell borrow
+// while entering GPUI: updates may install a new handler during rendering.
+thread_local! {
+    static IME_HANDLER: RefCell<std::rc::Weak<RefCell<Option<PlatformInputHandler>>>> = RefCell::default();
+    static IME_SHOW_ON_TAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static IME_ACK: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+    static IME_LAST: RefCell<Option<(String, i32, i32, i32, i32, i32, i64)>> = RefCell::default();
+}
+
+fn with_ime_handler<R>(f: impl FnOnce(&mut PlatformInputHandler) -> R) -> Option<R> {
+    let slot = IME_HANDLER.with(|slot| slot.borrow().upgrade())?;
+    let mut handler = slot.borrow_mut().take()?;
+    let result = f(&mut handler);
+    let mut current = slot.borrow_mut();
+    if current.is_none() {
+        *current = Some(handler);
+    }
+    Some(result)
+}
+
+pub(super) fn ime_edit(
+    mode: i32,
+    start: i32,
+    end: i32,
+    text: String,
+    selection_start: i32,
+    selection_end: i32,
+    serial: i64,
+) {
+    with_ime_handler(|handler| {
+        if mode == 2 {
+            handler.unmark_text();
+            return;
+        }
+        // Uncached selections stay native. Never substitute Java's clipped cache
+        // selection for the actual editor range.
+        if mode == 4 || mode == 5 {
+            let Some(selected) = handler.selected_text_range(false) else {
+                return;
+            };
+            let insertion = handler.marked_text_range().unwrap_or(selected.range).start;
+            let length = text.encode_utf16().count();
+            let cursor = selection_start as i64;
+            let position = if cursor > 0 {
+                insertion as i64 + length as i64 + cursor - 1
+            } else {
+                insertion as i64 + cursor
+            };
+            if mode == 5 {
+                let relative = (position - insertion as i64).clamp(0, length as i64) as usize;
+                handler.replace_and_mark_text_in_range(None, &text, Some(relative..relative));
+            } else {
+                handler.replace_text_in_range(None, &text);
+            }
+            if cursor != 1 {
+                let position = position.max(0) as usize;
+                handler.set_selected_text_range(position..position);
+            }
+            return;
+        }
+        if mode == 6 || mode == 7 {
+            let Some(selected) = handler.selected_text_range(false) else {
+                return;
+            };
+            let range = selected.range;
+            let before = start.max(0) as usize;
+            let after = end.max(0) as usize;
+            let (left, right) = if mode == 7 {
+                let mut adjusted = None;
+                let preceding = handler
+                    .text_for_range(
+                        range.start.saturating_sub(before * 2)..range.start,
+                        &mut adjusted,
+                    )
+                    .unwrap_or_default();
+                let following = handler
+                    .text_for_range(range.end..range.end.saturating_add(after * 2), &mut None)
+                    .unwrap_or_default();
+                (
+                    range.start.saturating_sub(
+                        preceding
+                            .chars()
+                            .rev()
+                            .take(before)
+                            .map(char::len_utf16)
+                            .sum(),
+                    ),
+                    range.end.saturating_add(
+                        following
+                            .chars()
+                            .take(after)
+                            .map(char::len_utf16)
+                            .sum::<usize>(),
+                    ),
+                )
+            } else {
+                (
+                    range.start.saturating_sub(before),
+                    range.end.saturating_add(after),
+                )
+            };
+            handler.unmark_text();
+            if right > range.end {
+                handler.replace_text_in_range(Some(range.end..right), "");
+            }
+            if left < range.start {
+                handler.replace_text_in_range(Some(left..range.start), "");
+            }
+            let remaining_end = range.end.saturating_sub(range.start - left);
+            handler.set_selected_text_range(if selected.reversed {
+                remaining_end..left
+            } else {
+                left..remaining_end
+            });
+            return;
+        }
+        if mode == 3 {
+            if start >= 0 && end >= 0 {
+                handler.set_selected_text_range(start as usize..end as usize);
+            }
+            return;
+        }
+        if start < 0 || end < start {
+            return;
+        }
+        // Android InputConnection reports absolute UTF-16 offsets. GPUI's
+        // replacement API uses mark-relative offsets while composition exists.
+        // Without translation, the second word's prefix is added twice.
+        let absolute = start as usize..end as usize;
+        let range = if let Some(marked) = handler.marked_text_range() {
+            if absolute.start >= marked.start {
+                Some(absolute.start - marked.start..absolute.end - marked.start)
+            } else {
+                // A replacement before the composition cannot be represented
+                // by an unsigned mark-relative range. End composition first.
+                handler.unmark_text();
+                Some(absolute)
+            }
+        } else {
+            Some(absolute)
+        };
+        if mode == 1 {
+            let length = text.encode_utf16().count();
+            let a = (selection_start.max(0) as usize).min(length);
+            let b = (selection_end.max(0) as usize).min(length);
+            handler.replace_and_mark_text_in_range(range, &text, Some(a.min(b)..a.max(b)));
+        } else {
+            handler.replace_text_in_range(range, &text);
+            if selection_start >= 0 && selection_end >= 0 {
+                handler.set_selected_text_range(selection_start as usize..selection_end as usize);
+            }
+        }
+    });
+    IME_ACK.with(|ack| ack.set(serial));
+}
+
+/// Publish bounded surrounding text from a shallow event-loop frame boundary.
+/// Java answers synchronous IME queries from this snapshot, never waiting on GPUI.
+pub(super) fn sync_ime() {
+    let snapshot = with_ime_handler(|handler| {
+        let selection = handler.selected_text_range(false)?;
+        let caret = if selection.reversed {
+            selection.range.start
+        } else {
+            selection.range.end
+        };
+        // Allow at most two extra UTF-16 units for surrogate-boundary clipping.
+        let start = caret.saturating_sub(4095);
+        let end = caret.saturating_add(4095);
+        let mut adjusted = None;
+        let text = handler.text_for_range(start..end, &mut adjusted)?;
+        let offset = adjusted.map_or(start, |range| range.start);
+        let marked = handler.marked_text_range();
+        Some((
+            text,
+            offset as i32,
+            if selection.reversed {
+                selection.range.end
+            } else {
+                selection.range.start
+            } as i32,
+            if selection.reversed {
+                selection.range.start
+            } else {
+                selection.range.end
+            } as i32,
+            marked.as_ref().map_or(-1, |r| r.start as i32),
+            marked.map_or(-1, |r| r.end as i32),
+            IME_ACK.with(|ack| ack.get()),
+        ))
+    })
+    .flatten();
+    IME_LAST.with(|last| {
+        if *last.borrow() == snapshot {
+            return;
+        }
+        if super::jni::publish_ime(snapshot.as_ref()) {
+            *last.borrow_mut() = snapshot;
+        }
+    });
+    if IME_SHOW_ON_TAP.with(|pending| pending.replace(false)) {
+        let accepts_text = with_ime_handler(|handler| {
+            handler.query_accepts_text_input() && handler.selected_text_range(false).is_some()
+        })
+        .unwrap_or(false);
+        if accepts_text {
+            // Existing helper queues JNI work onto the shallow native dispatcher.
+            super::jni::show_keyboard_android(crate::KeyboardType::Default);
+        }
     }
 }

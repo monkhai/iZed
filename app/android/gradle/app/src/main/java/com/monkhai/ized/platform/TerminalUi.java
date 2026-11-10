@@ -152,6 +152,12 @@ public final class TerminalUi {
                         if (action.equals("show")) show(activity);
                         else if (picker != null && picker.isShowing()) renderRows();
                         break;
+                    case "network_settings":
+                    case "network_state":
+                        model = new JSONObject(payload);
+                        if (action.equals("network_settings")) showDeviceSettings(activity);
+                        else if (deviceSettings != null && deviceSettings.isShowing()) renderDeviceSettings(settingsForm);
+                        break;
                     case "trust": showTrust(activity, new JSONObject(payload)); break;
                     case "login":
                         Uri uri = Uri.parse(payload);
@@ -341,6 +347,7 @@ public final class TerminalUi {
     }
     private static void showDeviceSettings(Activity activity) {
         if(deviceSettings!=null&&deviceSettings.isShowing())return;
+        owner=activity;
         Dialog dialog=new Dialog(activity,android.R.style.Theme_DeviceDefault_NoActionBar);deviceSettings=dialog;
         LinearLayout page=column(activity);page.setFocusableInTouchMode(true);
         page.addView(navigation(activity,"Device settings",dialog::dismiss,null));

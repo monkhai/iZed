@@ -1,0 +1,1366 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 6d71498353..f6744e856c 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -4635,6 +4635,7 @@ dependencies = [
+  "parking_lot",
+  "paths",
+  "proto",
++ "remote",
+  "schemars",
+  "serde",
+  "serde_json",
+@@ -4881,6 +4882,7 @@ dependencies = [
+  "picker",
+  "pretty_assertions",
+  "project",
++ "remote",
+  "rpc",
+  "schemars",
+  "serde",
+@@ -9926,22 +9928,26 @@ dependencies = [
+  "log",
+  "menu",
+  "mistral",
++ "oauth_callback_server",
+  "ollama",
+  "open_ai",
+  "open_router",
+  "opencode",
+  "pretty_assertions",
++ "rand 0.9.3",
+  "release_channel",
+  "schemars",
+  "serde",
+  "serde_json",
+  "settings",
++ "sha2 0.10.9",
+  "smol",
+  "strum 0.27.2",
+  "tiktoken-rs",
+  "tokio",
+  "ui",
+  "ui_input",
++ "url",
+  "util",
+  "vercel",
+  "x_ai",
+@@ -11830,6 +11836,17 @@ dependencies = [
+  "tokio-util",
+ ]
+ 
++[[package]]
++name = "oauth_callback_server"
++version = "0.1.0"
++dependencies = [
++ "anyhow",
++ "futures 0.3.32",
++ "log",
++ "tiny_http",
++ "url",
++]
++
+ [[package]]
+ name = "objc"
+ version = "0.2.7"
+@@ -15088,6 +15105,7 @@ dependencies = [
+  "serde",
+  "serde_json",
+  "settings",
++ "sha2 0.10.9",
+  "smol",
+  "tempfile",
+  "thiserror 2.0.21",
+diff --git a/crates/client/src/telemetry.rs b/crates/client/src/telemetry.rs
+index 12d1309adb..6ff121ab2a 100644
+--- a/crates/client/src/telemetry.rs
++++ b/crates/client/src/telemetry.rs
+@@ -104,6 +104,8 @@ static MACOS_VERSION_REGEX: LazyLock<Regex> =
+     LazyLock::new(|| Regex::new(r"(\s*\(Build [^)]*[0-9]\))").unwrap());
+ 
+ pub fn os_name() -> String {
++    #[cfg(target_os = "android")]
++    { "Android".to_string() }
+     #[cfg(target_os = "ios")]
+     {
+         "iOS".to_string()
+@@ -129,7 +131,7 @@ pub fn os_name() -> String {
+ 
+ /// Note: This might do blocking IO! Only call from background threads
+ pub fn os_version() -> String {
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     {
+         "unknown".to_string()
+     }
+diff --git a/crates/dap/Cargo.toml b/crates/dap/Cargo.toml
+index 5458ce0078..cee73bf90c 100644
+--- a/crates/dap/Cargo.toml
++++ b/crates/dap/Cargo.toml
+@@ -52,7 +52,7 @@ util.workspace = true
+ [target.'cfg(not(windows))'.dependencies]
+ libc.workspace = true
+ 
+-[target.'cfg(target_os = "ios")'.dependencies]
++[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+ remote.workspace = true
+ 
+ [dev-dependencies]
+diff --git a/crates/dap/src/transport.rs b/crates/dap/src/transport.rs
+index 96e7456853..340abaa2d3 100644
+--- a/crates/dap/src/transport.rs
++++ b/crates/dap/src/transport.rs
+@@ -80,7 +80,7 @@ async fn start(
+     log_handlers: LogHandlers,
+     cx: &mut AsyncApp,
+ ) -> Result<Box<dyn Transport>> {
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     if binary.command.as_deref() == Some("ized-ssh-debug-adapter") {
+         return Ok(Box::new(IosSshTransport::start(binary, cx).await?));
+     }
+@@ -734,14 +734,14 @@ impl Drop for StdioTransport {
+     }
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ struct IosSshTransport {
+     input: Option<async_pipe::PipeWriter>,
+     output: Option<async_pipe::PipeReader>,
+     tasks: Vec<Task<()>>,
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ impl IosSshTransport {
+     async fn start(binary: &DebugAdapterBinary, cx: &mut AsyncApp) -> Result<Self> {
+         let options = serde_json::from_str(
+@@ -791,7 +791,7 @@ impl IosSshTransport {
+     }
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ impl Transport for IosSshTransport {
+     fn has_adapter_logs(&self) -> bool { true }
+     fn tcp_arguments(&self) -> Option<TcpArguments> { None }
+@@ -814,7 +814,7 @@ impl Transport for IosSshTransport {
+     }
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ impl Drop for IosSshTransport {
+     fn drop(&mut self) { self.kill(); }
+ }
+diff --git a/crates/debugger_ui/src/debugger_panel.rs b/crates/debugger_ui/src/debugger_panel.rs
+index d207078a85..5c009da60d 100644
+--- a/crates/debugger_ui/src/debugger_panel.rs
++++ b/crates/debugger_ui/src/debugger_panel.rs
+@@ -69,7 +69,7 @@ pub struct DebugPanel {
+     is_zoomed: bool,
+     _subscriptions: [Subscription; 1],
+     breakpoint_list: Entity<BreakpointList>,
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     mac_debugger_setup_needed: bool,
+ }
+ 
+@@ -113,16 +113,16 @@ impl DebugPanel {
+                 is_zoomed: false,
+                 _subscriptions: [focus_subscription],
+                 debug_scenario_scheduled_last: true,
+-                #[cfg(target_os = "ios")]
++                #[cfg(any(target_os = "ios", target_os = "android"))]
+                 mac_debugger_setup_needed: false,
+             }
+         });
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         panel.update(cx, |panel, cx| panel.check_mac_debugger_access(cx));
+         panel
+     }
+ 
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     fn check_mac_debugger_access(&mut self, cx: &mut Context<Self>) {
+         let Some(remote_client) = self.project.read(cx).remote_client() else {
+             return;
+@@ -224,7 +224,7 @@ impl DebugPanel {
+         window: &mut Window,
+         cx: &mut Context<Self>,
+     ) {
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         self.check_mac_debugger_access(cx);
+         let dap_store = self.project.read(cx).dap_store();
+         let Some(adapter) = DapRegistry::global(cx).adapter(&scenario.adapter) else {
+@@ -1679,10 +1679,10 @@ impl Render for DebugPanel {
+             .size_full()
+             .key_context("DebugPanel")
+             .child(h_flex().children(self.top_controls_strip(window, cx)))
+-            .when(cfg!(target_os = "ios") && {
+-                #[cfg(target_os = "ios")]
++            .when(cfg!(any(target_os = "ios", target_os = "android")) && {
++                #[cfg(any(target_os = "ios", target_os = "android"))]
+                 { self.mac_debugger_setup_needed }
+-                #[cfg(not(target_os = "ios"))]
++                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                 { false }
+             }, |this| {
+                 this.child(
+@@ -1710,7 +1710,7 @@ impl Render for DebugPanel {
+                                     }))
+                                 .child(Button::new("recheck-devtools-access", "Recheck")
+                                     .on_click(cx.listener(|panel, _, _, cx| {
+-                                        #[cfg(target_os = "ios")]
++                                        #[cfg(any(target_os = "ios", target_os = "android"))]
+                                         panel.check_mac_debugger_access(cx);
+                                     }))),
+                         ),
+diff --git a/crates/debugger_ui/src/session/running.rs b/crates/debugger_ui/src/session/running.rs
+index 13b262bda2..3fb5e0d771 100644
+--- a/crates/debugger_ui/src/session/running.rs
++++ b/crates/debugger_ui/src/session/running.rs
+@@ -1022,7 +1022,7 @@ impl RunningState {
+             .remote_client()
+             .as_ref()
+             .and_then(|remote| remote.read(cx).shell());
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         let ssh_options = project
+             .read(cx)
+             .remote_client()
+@@ -1153,7 +1153,7 @@ impl RunningState {
+                     args,
+                     ..task.resolved.clone()
+                 };
+-                #[cfg(target_os = "ios")]
++                #[cfg(any(target_os = "ios", target_os = "android"))]
+                 {
+                     let options = ssh_options.clone().context("Debugger build requires an SSH Machine")?;
+                     let (status, output) = remote::run_ssh_task(
+@@ -1169,7 +1169,7 @@ impl RunningState {
+                         bail!("Remote build failed (exit {status}): {output}");
+                     }
+                 }
+-                #[cfg(not(target_os = "ios"))]
++                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                 {
+                 let terminal = project
+                     .update(cx, |project, cx| {
+diff --git a/crates/editor/src/editor.rs b/crates/editor/src/editor.rs
+index bca55b5d17..743875f367 100644
+--- a/crates/editor/src/editor.rs
++++ b/crates/editor/src/editor.rs
+@@ -28541,6 +28541,32 @@ impl EntityInputHandler for Editor {
+         })
+     }
+ 
++    #[cfg(target_os = "android")]
++    fn set_selected_text_range(
++        &mut self,
++        range: Range<usize>,
++        window: &mut Window,
++        cx: &mut Context<Self>,
++    ) -> bool {
++        if !self.input_enabled {
++            return false;
++        }
++        let snapshot = self.buffer.read(cx).read(cx);
++        let reversed = range.start > range.end;
++        let start = snapshot.clip_offset_utf16(
++            MultiBufferOffsetUtf16(OffsetUtf16(range.start.min(range.end))), Bias::Left,
++        );
++        let end = if range.start == range.end { start } else { snapshot.clip_offset_utf16(
++            MultiBufferOffsetUtf16(OffsetUtf16(range.start.max(range.end))), Bias::Right,
++        ) };
++        drop(snapshot);
++        let range = if reversed { end..start } else { start..end };
++        self.change_selections(SelectionEffects::no_scroll(), window, cx, |selections| {
++            selections.select_ranges([range]);
++        });
++        true
++    }
++
+     fn marked_text_range(&self, _: &mut Window, cx: &mut Context<Self>) -> Option<Range<usize>> {
+         let snapshot = self.buffer.read(cx).read(cx);
+         let range = self
+diff --git a/crates/gpui/src/input.rs b/crates/gpui/src/input.rs
+index 10ca46501d..35d26443f7 100644
+--- a/crates/gpui/src/input.rs
++++ b/crates/gpui/src/input.rs
+@@ -25,6 +25,17 @@ pub trait EntityInputHandler: 'static + Sized {
+         cx: &mut Context<Self>,
+     ) -> Option<UTF16Selection>;
+ 
++    /// See [`InputHandler::set_selected_text_range`] for details.
++    #[cfg(target_os = "android")]
++    fn set_selected_text_range(
++        &mut self,
++        _range: Range<usize>,
++        _window: &mut Window,
++        _cx: &mut Context<Self>,
++    ) -> bool {
++        false
++    }
++
+     /// See [`InputHandler::marked_text_range`] for details
+     fn marked_text_range(
+         &self,
+@@ -108,6 +119,16 @@ impl<V: EntityInputHandler> InputHandler for ElementInputHandler<V> {
+         })
+     }
+ 
++    #[cfg(target_os = "android")]
++    fn set_selected_text_range(
++        &mut self,
++        range: Range<usize>,
++        window: &mut Window,
++        cx: &mut App,
++    ) -> bool {
++        self.view.update(cx, |view, cx| view.set_selected_text_range(range, window, cx))
++    }
++
+     fn marked_text_range(&mut self, window: &mut Window, cx: &mut App) -> Option<Range<usize>> {
+         self.view
+             .update(cx, |view, cx| view.marked_text_range(window, cx))
+diff --git a/crates/gpui/src/platform.rs b/crates/gpui/src/platform.rs
+index d79c82b3cd..e1230a3ed2 100644
+--- a/crates/gpui/src/platform.rs
++++ b/crates/gpui/src/platform.rs
+@@ -27,7 +27,7 @@ pub(crate) type PlatformScreenCaptureFrame = scap::frame::Frame;
+ pub(crate) type PlatformScreenCaptureFrame = ();
+ #[cfg(all(target_os = "macos", feature = "screen-capture"))]
+ pub(crate) type PlatformScreenCaptureFrame = core_video::image_buffer::CVImageBuffer;
+-#[cfg(all(target_os = "ios", feature = "screen-capture"))]
++#[cfg(all(any(target_os = "ios", target_os = "android"), feature = "screen-capture"))]
+ pub(crate) type PlatformScreenCaptureFrame = ();
+ 
+ use crate::{
+@@ -1137,6 +1137,14 @@ impl PlatformInputHandler {
+             .flatten()
+     }
+ 
++    /// Set the selection using UTF-16 offsets, without editing text.
++    #[cfg(target_os = "android")]
++    pub fn set_selected_text_range(&mut self, range: Range<usize>) -> bool {
++        self.cx.update(|window, cx| {
++            self.handler.set_selected_text_range(range, window, cx)
++        }).unwrap_or(false)
++    }
++
+     #[cfg_attr(target_os = "windows", allow(dead_code))]
+     pub fn marked_text_range(&mut self) -> Option<Range<usize>> {
+         self.cx
+@@ -1283,6 +1291,19 @@ pub trait InputHandler: 'static {
+         cx: &mut App,
+     ) -> Option<UTF16Selection>;
+ 
++    /// Set the selection using absolute UTF-16 offsets without editing text.
++    /// A descending range denotes a reversed selection. Unsupported handlers
++    /// return false and leave their selection unchanged.
++    #[cfg(target_os = "android")]
++    fn set_selected_text_range(
++        &mut self,
++        _range: Range<usize>,
++        _window: &mut Window,
++        _cx: &mut App,
++    ) -> bool {
++        false
++    }
++
+     /// Get the range of the currently marked text, if any
+     /// Corresponds to [markedRange()](https://developer.apple.com/documentation/appkit/nstextinputclient/1438250-markedrange)
+     ///
+diff --git a/crates/language_models/src/provider/openai_subscribed.rs b/crates/language_models/src/provider/openai_subscribed.rs
+index 9d5307a3c7..71747489dd 100644
+--- a/crates/language_models/src/provider/openai_subscribed.rs
++++ b/crates/language_models/src/provider/openai_subscribed.rs
+@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
+ use sha2::{Digest, Sha256};
+ use std::sync::Arc;
+ use std::time::{SystemTime, UNIX_EPOCH};
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ use std::time::Duration;
+ use ui::{ConfiguredApiCard, prelude::*};
+ use url::form_urlencoded;
+@@ -62,7 +62,7 @@ pub struct State {
+     auth_generation: u64,
+     last_auth_error: Option<SharedString>,
+     available_models: Vec<ChatGptModel>,
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     device_code: Option<String>,
+ }
+ 
+@@ -115,7 +115,7 @@ impl OpenAiSubscribedProvider {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -929,7 +929,7 @@ async fn do_oauth_flow(
+     })
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ #[derive(Deserialize)]
+ struct DeviceAuthorization {
+     device_auth_id: String,
+@@ -939,14 +939,14 @@ struct DeviceAuthorization {
+     interval: serde_json::Value,
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ #[derive(Deserialize)]
+ struct DeviceAuthorizationResult {
+     authorization_code: String,
+     code_verifier: String,
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ async fn do_device_code_flow(
+     http_client: Arc<dyn HttpClient>,
+     state: gpui::WeakEntity<State>,
+@@ -1182,9 +1182,9 @@ fn do_sign_in(state: &Entity<State>, http_client: &Arc<dyn HttpClient>, cx: &mut
+     let catalog_http_client = http_client.clone();
+ 
+     let task = cx.spawn(async move |cx| {
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         let sign_in_result = do_device_code_flow(http_client, weak_state.clone(), cx).await;
+-        #[cfg(not(target_os = "ios"))]
++        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+         let sign_in_result = do_oauth_flow(http_client, &*cx).await;
+         match sign_in_result {
+             Ok(creds) => {
+@@ -1206,7 +1206,7 @@ fn do_sign_in(state: &Entity<State>, http_client: &Arc<dyn HttpClient>, cx: &mut
+                                 s.credentials = Some(creds);
+                                 s.sign_in_task = None;
+                                 s.last_auth_error = None;
+-                                #[cfg(target_os = "ios")]
++                                #[cfg(any(target_os = "ios", target_os = "android"))]
+                                 { s.device_code = None; }
+                                 cx.notify();
+                             })
+@@ -1222,7 +1222,7 @@ fn do_sign_in(state: &Entity<State>, http_client: &Arc<dyn HttpClient>, cx: &mut
+                                 s.sign_in_task = None;
+                                 s.last_auth_error =
+                                     Some("Failed to save credentials. Please try again.".into());
+-                                #[cfg(target_os = "ios")]
++                                #[cfg(any(target_os = "ios", target_os = "android"))]
+                                 { s.device_code = None; }
+                                 cx.notify();
+                             })
+@@ -1236,7 +1236,7 @@ fn do_sign_in(state: &Entity<State>, http_client: &Arc<dyn HttpClient>, cx: &mut
+                     .update(cx, |s, cx| {
+                         s.sign_in_task = None;
+                         s.last_auth_error = Some("Sign-in failed. Please try again.".into());
+-                        #[cfg(target_os = "ios")]
++                        #[cfg(any(target_os = "ios", target_os = "android"))]
+                         { s.device_code = None; }
+                         cx.notify();
+                     })
+@@ -1248,7 +1248,7 @@ fn do_sign_in(state: &Entity<State>, http_client: &Arc<dyn HttpClient>, cx: &mut
+ 
+     state.update(cx, |s, cx| {
+         s.last_auth_error = None;
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         { s.device_code = None; }
+         s.sign_in_task = Some(task);
+         cx.notify();
+@@ -1309,7 +1309,7 @@ impl Render for ConfigurationView {
+         }
+ 
+         if state.is_signing_in() {
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             if let Some(code) = state.device_code.clone() {
+                 let copied_code = code.clone();
+                 return v_flex()
+@@ -1458,7 +1458,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -1517,7 +1517,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -1556,7 +1556,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -1593,7 +1593,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -1639,7 +1639,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -1699,7 +1699,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+@@ -1754,7 +1754,7 @@ mod tests {
+             auth_generation: 0,
+             last_auth_error: None,
+             available_models: ChatGptModel::all(),
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             device_code: None,
+         });
+ 
+diff --git a/crates/livekit_client/src/livekit_client/playback.rs b/crates/livekit_client/src/livekit_client/playback.rs
+index 8999b09eff..d6ac48c18d 100644
+--- a/crates/livekit_client/src/livekit_client/playback.rs
++++ b/crates/livekit_client/src/livekit_client/playback.rs
+@@ -773,7 +773,7 @@ fn video_frame_buffer_to_webrtc(frame: ScreenCaptureFrame) -> Option<impl AsRef<
+     }
+ }
+ 
+-#[cfg(all(not(target_os = "macos"), not(target_os = "ios")))]
++#[cfg(all(not(target_os = "macos"), not(any(target_os = "ios", target_os = "android"))))]
+ fn video_frame_buffer_to_webrtc(frame: ScreenCaptureFrame) -> Option<impl AsRef<dyn VideoBuffer>> {
+     use libwebrtc::native::yuv_helper::{abgr_to_nv12, argb_to_nv12};
+     use livekit::webrtc::prelude::NV12Buffer;
+@@ -831,7 +831,7 @@ fn video_frame_buffer_to_webrtc(frame: ScreenCaptureFrame) -> Option<impl AsRef<
+     }
+ }
+ 
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ fn video_frame_buffer_to_webrtc(_frame: ScreenCaptureFrame) -> Option<impl AsRef<dyn VideoBuffer>> {
+     None::<livekit::webrtc::prelude::NV12Buffer>
+ }
+diff --git a/crates/project/src/debugger/dap_store.rs b/crates/project/src/debugger/dap_store.rs
+index b5ca8f0d8b..f339361a2d 100644
+--- a/crates/project/src/debugger/dap_store.rs
++++ b/crates/project/src/debugger/dap_store.rs
+@@ -306,7 +306,7 @@ impl DapStore {
+                 })
+             }
+             DapStoreMode::Remote(remote) => {
+-                #[cfg(target_os = "ios")]
++                #[cfg(any(target_os = "ios", target_os = "android"))]
+                 {
+                     let mut definition = definition;
+                     if definition.adapter.as_ref() == "CodeLLDB"
+diff --git a/crates/project/src/terminals.rs b/crates/project/src/terminals.rs
+index bccf4c2eeb..d0488900c3 100644
+--- a/crates/project/src/terminals.rs
++++ b/crates/project/src/terminals.rs
+@@ -25,12 +25,12 @@ pub struct Terminals {
+     pub(crate) local_handles: Vec<WeakEntity<terminal::Terminal>>,
+ }
+ 
+-#[cfg(any(target_os = "ios", test))]
++#[cfg(any(any(target_os = "ios", target_os = "android"), test))]
+ fn use_ios_remote_command_route(is_ios: bool, has_remote_client: bool) -> bool {
+     is_ios && has_remote_client
+ }
+ 
+-#[cfg(any(target_os = "ios", test))]
++#[cfg(any(any(target_os = "ios", target_os = "android"), test))]
+ fn ensure_remote_command_connected(state: remote::ConnectionState) -> Result<()> {
+     anyhow::ensure!(
+         state == remote::ConnectionState::Connected,
+@@ -102,7 +102,7 @@ impl Project {
+         spawn_task: SpawnInTerminal,
+         cx: &mut Context<Self>,
+     ) -> Task<Result<Entity<Terminal>>> {
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         if use_ios_remote_command_route(true, self.remote_client.is_some()) {
+             return self.create_ios_remote_terminal_task(spawn_task, cx);
+         }
+@@ -362,7 +362,7 @@ impl Project {
+         force_local: bool,
+         cx: &mut Context<Self>,
+     ) -> Task<Result<Entity<Terminal>>> {
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         if self.remote_client.is_some() && !force_local {
+             return self.create_ios_remote_terminal_shell(cwd, cx);
+         }
+@@ -498,7 +498,7 @@ impl Project {
+         })
+     }
+ 
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     fn create_ios_remote_terminal_task(
+         &mut self,
+         spawn_task: SpawnInTerminal,
+@@ -573,7 +573,7 @@ impl Project {
+         })
+     }
+ 
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     fn create_ios_remote_terminal_shell(
+         &mut self,
+         cwd: Option<PathBuf>,
+diff --git a/crates/project_panel/src/project_panel.rs b/crates/project_panel/src/project_panel.rs
+index cec7db3a49..d1b4fc96be 100644
+--- a/crates/project_panel/src/project_panel.rs
++++ b/crates/project_panel/src/project_panel.rs
+@@ -1151,26 +1151,26 @@ impl ProjectPanel {
+             let context_menu = ContextMenu::build(window, cx, |menu, _, cx| {
+                 menu.context(self.focus_handle.clone()).map(|menu| {
+                     if is_read_only {
+-                        menu.when(is_dir && !cfg!(target_os = "ios"), |menu| {
++                        menu.when(is_dir && !cfg!(any(target_os = "ios", target_os = "android")), |menu| {
+                             menu.action("Search Inside", Box::new(NewSearchInDirectory))
+                         })
+                     } else {
+                         menu.action("New File", Box::new(NewFile))
+                             .action("New Folder", Box::new(NewDirectory))
+-                            .when(!cfg!(target_os = "ios"), |menu| menu.separator())
+-                            .when(is_local && !cfg!(target_os = "ios"), |menu| {
++                            .when(!cfg!(any(target_os = "ios", target_os = "android")), |menu| menu.separator())
++                            .when(is_local && !cfg!(any(target_os = "ios", target_os = "android")), |menu| {
+                                 menu.action(
+                                     ui::utils::reveal_in_file_manager_label(is_remote),
+                                     Box::new(RevealInFileManager),
+                                 )
+                             })
+-                            .when(is_local && !cfg!(target_os = "ios"), |menu| {
++                            .when(is_local && !cfg!(any(target_os = "ios", target_os = "android")), |menu| {
+                                 menu.action("Open in Default App", Box::new(OpenWithSystem))
+                             })
+-                            .when(!cfg!(target_os = "ios"), |menu| {
++                            .when(!cfg!(any(target_os = "ios", target_os = "android")), |menu| {
+                                 menu.action("Open in Terminal", Box::new(OpenInTerminal))
+                             })
+-                            .when(is_dir && !cfg!(target_os = "ios"), |menu| {
++                            .when(is_dir && !cfg!(any(target_os = "ios", target_os = "android")), |menu| {
+                                 menu.separator()
+                                     .action("Find in Folder…", Box::new(NewSearchInDirectory))
+                             })
+@@ -1231,7 +1231,7 @@ impl ProjectPanel {
+                             .when(!is_root, |menu| {
+                                 menu.action("Delete", Box::new(Delete { skip_prompt: false }))
+                             })
+-                            .when(!is_collab && is_root && !cfg!(target_os = "ios"), |menu| {
++                            .when(!is_collab && is_root && !cfg!(any(target_os = "ios", target_os = "android")), |menu| {
+                                 menu.separator()
+                                     .action(
+                                         "Add Project to Workspace…",
+@@ -3866,13 +3866,13 @@ impl ProjectPanel {
+         // The iOS platform clipboard currently exposes text only, so it cannot
+         // contain GPUI ExternalPaths. Reading it here would trigger iPadOS's
+         // paste permission prompt just from opening the context menu.
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         {
+             let _ = cx;
+             return None;
+         }
+ 
+-        #[cfg(not(target_os = "ios"))]
++        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+         {
+             let clipboard_item = cx.read_from_clipboard()?;
+             for entry in clipboard_item.entries() {
+@@ -7137,7 +7137,17 @@ impl Render for ProjectPanel {
+                 .justify_center()
+                 .gap_1()
+                 .track_focus(&self.focus_handle(cx))
+-                .child(
++                .when(cfg!(target_os = "android"), |this| this.child(
++                    Button::new("open_remote", "Open Remote")
++                        .full_width()
++                        .on_click(|_, window, cx| {
++                            window.dispatch_action(Box::new(zed_actions::OpenRemote {
++                                from_existing_connection: false,
++                                create_new_window: false,
++                            }), cx);
++                        }),
++                ))
++                .when(!cfg!(target_os = "android"), |this| this.child(
+                     Button::new("open_project", "Open Project")
+                         .full_width()
+                         .key_binding(KeyBinding::for_action_in(
+@@ -7174,7 +7184,7 @@ impl Render for ProjectPanel {
+                                 })
+                                 .log_err();
+                         })),
+-                )
++                ))
+                 .when(is_local, |div| {
+                     div.when(panel_settings.drag_and_drop, |div| {
+                         div.drag_over::<ExternalPaths>(|style, _, _, cx| {
+diff --git a/crates/prompt_store/src/prompt_store.rs b/crates/prompt_store/src/prompt_store.rs
+index cca8c08d45..e17011a4ce 100644
+--- a/crates/prompt_store/src/prompt_store.rs
++++ b/crates/prompt_store/src/prompt_store.rs
+@@ -14,7 +14,7 @@ use heed::{
+     types::{SerdeBincode, SerdeJson, Str},
+ };
+ use parking_lot::RwLock;
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ use parking_lot::Mutex;
+ pub use prompts::*;
+ use rope::Rope;
+@@ -173,7 +173,7 @@ impl std::fmt::Display for PromptId {
+ 
+ pub struct PromptStore {
+     env: heed::Env,
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     io_lock: Arc<Mutex<()>>,
+     metadata_cache: RwLock<MetadataCache>,
+     metadata: Database<SerdeJson<PromptId>, SerdeJson<PromptMetadata>>,
+@@ -261,7 +261,7 @@ impl PromptStore {
+             options
+                 .map_size(1024 * 1024 * 1024) // 1GB
+                 .max_dbs(4); // Metadata and bodies (possibly v1 of both as well)
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             unsafe {
+                 // iPadOS disallows the System V semaphore used by LMDB's lock
+                 // table. This process is the sole owner of this database; the
+@@ -283,7 +283,7 @@ impl PromptStore {
+ 
+             Ok(PromptStore {
+                 env: db_env,
+-                #[cfg(target_os = "ios")]
++                #[cfg(any(target_os = "ios", target_os = "android"))]
+                 io_lock: Arc::new(Mutex::new(())),
+                 metadata_cache: RwLock::new(metadata_cache),
+                 metadata,
+@@ -354,10 +354,10 @@ impl PromptStore {
+     pub fn load(&self, id: PromptId, cx: &App) -> Task<Result<String>> {
+         let env = self.env.clone();
+         let bodies = self.bodies;
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         let io_lock = self.io_lock.clone();
+         cx.background_spawn(async move {
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             let _guard = io_lock.lock();
+             let txn = env.read_txn()?;
+             let mut prompt: String = match bodies.get(&txn, &id)? {
+@@ -396,11 +396,11 @@ impl PromptStore {
+         let db_connection = self.env.clone();
+         let bodies = self.bodies;
+         let metadata = self.metadata;
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         let io_lock = self.io_lock.clone();
+ 
+         let task = cx.background_spawn(async move {
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             let _guard = io_lock.lock();
+             let mut txn = db_connection.write_txn()?;
+ 
+@@ -529,11 +529,11 @@ impl PromptStore {
+         let db_connection = self.env.clone();
+         let bodies = self.bodies;
+         let metadata_db = self.metadata;
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         let io_lock = self.io_lock.clone();
+ 
+         let task = cx.background_spawn(async move {
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             let _guard = io_lock.lock();
+             let mut txn = db_connection.write_txn()?;
+ 
+@@ -584,11 +584,11 @@ impl PromptStore {
+ 
+         let db_connection = self.env.clone();
+         let metadata = self.metadata;
+-        #[cfg(target_os = "ios")]
++        #[cfg(any(target_os = "ios", target_os = "android"))]
+         let io_lock = self.io_lock.clone();
+ 
+         let task = cx.background_spawn(async move {
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             let _guard = io_lock.lock();
+             let mut txn = db_connection.write_txn()?;
+             metadata.put(&mut txn, &id, &prompt_metadata)?;
+diff --git a/crates/remote/Cargo.toml b/crates/remote/Cargo.toml
+index 6451a22932..e0d0fb66b0 100644
+--- a/crates/remote/Cargo.toml
++++ b/crates/remote/Cargo.toml
+@@ -50,7 +50,7 @@ gpui = { workspace = true, features = ["test-support"] }
+ fs = { workspace = true, features = ["test-support"] }
+ util = { workspace = true, features = ["test-support"] }
+ 
+-[target.'cfg(target_os = "ios")'.dependencies]
++[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+ russh = { version = "0.63.3", default-features = false, features = ["ring"] }
+ rand = "0.10"
+ sha2.workspace = true
+diff --git a/crates/remote/src/remote.rs b/crates/remote/src/remote.rs
+index e1fb5d446c..9033d61731 100644
+--- a/crates/remote/src/remote.rs
++++ b/crates/remote/src/remote.rs
+@@ -13,7 +13,7 @@ pub use remote_client::{
+ };
+ pub use transport::docker::DockerConnectionOptions;
+ pub use transport::ssh::{SshConnectionOptions, SshPortForwardOption};
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ pub use transport::ssh_ios::{SshCommandSession, SshHostIdentity, SshProcessSession, SshServerPhase, SshServerProgress, SshTerminalSession, check_ssh_directory, ensure_ssh_server, ipad_public_key, list_ssh_directories, open_ssh_command, open_ssh_process, open_ssh_terminal, probe_ssh_host, run_ssh_task, ssh_home_directory, trust_ssh_host};
+ pub use transport::wsl::WslConnectionOptions;
+ #[cfg(target_os = "windows")]
+@@ -23,3 +23,6 @@ pub use transport::wsl::wsl_path_to_windows_path;
+ pub use transport::mock::{
+     MockConnection, MockConnectionOptions, MockConnectionRegistry, MockDelegate,
+ };
++
++#[cfg(target_os = "android")]
++pub use transport::ssh_ios::{AndroidSshHooks, set_android_ssh_hooks};
+diff --git a/crates/remote/src/remote_client.rs b/crates/remote/src/remote_client.rs
+index 6979b8599d..01e42277f0 100644
+--- a/crates/remote/src/remote_client.rs
++++ b/crates/remote/src/remote_client.rs
+@@ -603,7 +603,7 @@ impl RemoteClient {
+         };
+ 
+         let attempts = attempts + 1;
+-        if attempts > MAX_RECONNECT_ATTEMPTS && !cfg!(target_os = "ios") {
++        if attempts > MAX_RECONNECT_ATTEMPTS && !cfg!(any(target_os = "ios", target_os = "android")) {
+             log::error!(
+                 "Failed to reconnect to after {} attempts, giving up",
+                 MAX_RECONNECT_ATTEMPTS
+@@ -678,7 +678,7 @@ impl RemoteClient {
+             let multiplex_task = Self::monitor(this.clone(), io_task, cx);
+             client.reconnect(incoming_rx, outgoing_tx, cx);
+ 
+-            let resync_timeout = if cfg!(target_os = "ios") {
++            let resync_timeout = if cfg!(any(target_os = "ios", target_os = "android")) {
+                 Duration::from_secs(30)
+             } else {
+                 HEARTBEAT_TIMEOUT
+@@ -732,7 +732,7 @@ impl RemoteClient {
+             if retry {
+                 // iPadOS may resume long after the network disappeared. Keep the
+                 // workspace and retry until connectivity returns, without a tight loop.
+-                if cfg!(target_os = "ios") {
++                if cfg!(any(target_os = "ios", target_os = "android")) {
+                     cx.background_executor().timer(Duration::from_secs(5)).await;
+                 }
+                 this.update(cx, |this, cx| {
+@@ -1022,7 +1022,7 @@ impl RemoteClient {
+ 
+     /// Verify a suspended iOS connection as soon as its window becomes active.
+     /// A failed ping enters the normal reconnect path without replacing the workspace.
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     pub fn check_after_resume(&mut self, cx: &mut Context<Self>) {
+         if !self.state_is(|state| matches!(state, State::Connected { .. })) {
+             return;
+@@ -1265,13 +1265,13 @@ impl ConnectionPool {
+                 async move |cx| {
+                     let connection = match opts.clone() {
+                         RemoteConnectionOptions::Ssh(opts) => {
+-                            #[cfg(target_os = "ios")]
++                            #[cfg(any(target_os = "ios", target_os = "android"))]
+                             {
+                                 crate::transport::ssh_ios::IosSshRemoteConnection::new(opts, delegate, cx)
+                                     .await
+                                     .map(|connection| Arc::new(connection) as Arc<dyn RemoteConnection>)
+                             }
+-                            #[cfg(not(target_os = "ios"))]
++                            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                             {
+                                 SshRemoteConnection::new(opts, delegate, cx)
+                                     .await
+diff --git a/crates/remote/src/transport.rs b/crates/remote/src/transport.rs
+index 5b8232f070..7ed583b991 100644
+--- a/crates/remote/src/transport.rs
++++ b/crates/remote/src/transport.rs
+@@ -18,7 +18,7 @@ pub mod docker;
+ #[cfg(any(test, feature = "test-support"))]
+ pub mod mock;
+ pub mod ssh;
+-#[cfg(target_os = "ios")]
++#[cfg(any(target_os = "ios", target_os = "android"))]
+ pub mod ssh_ios;
+ pub mod wsl;
+ 
+diff --git a/crates/remote/src/transport/ssh_ios.rs b/crates/remote/src/transport/ssh_ios.rs
+index 69862a94c2..2b229893ed 100644
+--- a/crates/remote/src/transport/ssh_ios.rs
++++ b/crates/remote/src/transport/ssh_ios.rs
+@@ -605,9 +605,41 @@ impl client::Handler for HostKeyProbe {
+     }
+ }
+ 
++/// Android supplies its existing encrypted identity and userspace Tailnet stream.
++/// Keeping these hooks here leaves the Zed protocol and SSH session logic shared.
++#[cfg(target_os = "android")]
++pub struct AndroidSshHooks {
++    pub directory: PathBuf,
++    pub private_key: fn() -> Result<PrivateKey>,
++    pub connect: fn(String, u16) -> futures::future::BoxFuture<'static, Result<tokio::net::TcpStream>>,
++}
++#[cfg(target_os = "android")]
++static ANDROID_SSH: OnceLock<AndroidSshHooks> = OnceLock::new();
++#[cfg(target_os = "android")]
++pub fn set_android_ssh_hooks(hooks: AndroidSshHooks) -> Result<()> {
++    ANDROID_SSH.set(hooks).map_err(|_| anyhow!("Android SSH already initialized"))
++}
++#[cfg(target_os = "android")]
++fn android_ssh() -> Result<&'static AndroidSshHooks> {
++    ANDROID_SSH.get().context("Android SSH is not initialized")
++}
++async fn mobile_connect<H: client::Handler + Send + 'static>(
++    config: Arc<client::Config>, host: &str, port: u16, handler: H,
++) -> Result<client::Handle<H>> where H::Error: Send + Sync + std::error::Error {
++    #[cfg(target_os = "android")]
++    { Ok(client::connect_stream(config, (android_ssh()?.connect)(host.to_owned(), port).await?, handler).await?) }
++    #[cfg(target_os = "ios")]
++    { Ok(client::connect(config, (host, port), handler).await?) }
++}
++
+ fn ipad_ssh_dir() -> Result<PathBuf> {
+-    let home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
+-    Ok(home.join("Documents").join(".ssh"))
++    #[cfg(target_os = "android")]
++    { Ok(android_ssh()?.directory.clone()) }
++    #[cfg(target_os = "ios")]
++    {
++        let home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
++        Ok(home.join("Documents").join(".ssh"))
++    }
+ }
+ 
+ pub async fn probe_ssh_host(options: SshConnectionOptions) -> Result<SshHostIdentity> {
+@@ -620,7 +652,7 @@ pub async fn probe_ssh_host(options: SshConnectionOptions) -> Result<SshHostIden
+         let _ = runtime.block_on(async {
+             tokio::time::timeout(
+                 Duration::from_secs(10),
+-                client::connect(config, (host.as_str(), port), HostKeyProbe(captured.clone())),
++                mobile_connect(config, &host, port, HostKeyProbe(captured.clone())),
+             ).await
+         });
+         let public_key = captured.lock().unwrap().clone()
+@@ -666,6 +698,10 @@ pub fn trust_ssh_host(options: &SshConnectionOptions, identity: &SshHostIdentity
+ 
+ /// Return the public half of iZed's device key, generating the pair once if needed.
+ pub fn ipad_public_key() -> Result<String> {
++    #[cfg(target_os = "android")]
++    { return Ok((android_ssh()?.private_key)()?.public_key().to_openssh()?); }
++    #[cfg(target_os = "ios")]
++    {
+     let dir = ipad_ssh_dir()?;
+     fs::create_dir_all(&dir)?;
+     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+@@ -678,6 +714,7 @@ pub fn ipad_public_key() -> Result<String> {
+     let key = russh::keys::load_secret_key(&path, None)?;
+     fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+     Ok(key.public_key().to_openssh()?)
++    }
+ }
+ 
+ impl client::Handler for HostKeyVerifier {
+@@ -710,6 +747,13 @@ impl IosSshRemoteConnection {
+     ) -> Result<Self> {
+         delegate.set_status(Some("Connecting over SSH"), cx);
+         let connect_options = options.clone();
++        // Android sessions stay connected while reading or pausing typing;
++        // bound startup, not idle time. Preserve the original iOS policy.
++        #[cfg(target_os = "android")]
++        let (runtime, handle) = smol::unblock(move || {
++            connect_with_connection_timeout(&connect_options, Duration::from_secs(15))
++        }).await?;
++        #[cfg(target_os = "ios")]
+         let (runtime, handle) = smol::unblock(move || connect(&connect_options)).await?;
+         delegate.set_status(Some("SSH connected"), cx);
+         Ok(Self {
+@@ -750,8 +794,11 @@ fn connect_with_timeouts(
+     let host = options.host.to_string();
+     let port = options.port.unwrap_or(22);
+     let expected_fingerprint = known_host_fingerprint(&ssh_dir.join("known_hosts"), &host, port)?;
++    #[cfg(target_os = "ios")]
+     let key = russh::keys::load_secret_key(ssh_dir.join("id_ed25519"), None)
+         .context("load iZed SSH private key")?;
++    #[cfg(target_os = "android")]
++    let key = (android_ssh()?.private_key)()?;
+     let username = options
+         .username
+         .clone()
+@@ -768,9 +815,9 @@ fn connect_with_timeouts(
+             ..Default::default()
+         });
+         let connect = async {
+-            let mut handle = client::connect(
++            let mut handle = mobile_connect(
+                 config,
+-                (host.as_str(), port),
++                &host, port,
+                 HostKeyVerifier {
+                     expected_fingerprint,
+                 },
+@@ -906,6 +953,9 @@ pub async fn ensure_ssh_server(options: SshConnectionOptions, archives_dir: Path
+         _ => bail!("Automatic Zed server setup does not support this Mac architecture: {arch}"),
+     };
+     let archive = archives_dir.join(archive_name);
++    #[cfg(target_os = "android")]
++    anyhow::ensure!(archive.is_file(),
++        "This build does not include a remote server for macOS {arch}; use a build packaged for this Mac architecture");
+     let digest_archive = archive.clone();
+     let (digest, size) = smol::unblock(move || bundled_archive_digest(&digest_archive)).await?;
+     let marker = "$HOME/.zed_server/.ized-server-sha256";
+diff --git a/crates/sidebar/src/sidebar.rs b/crates/sidebar/src/sidebar.rs
+index 52d5d9d068..e5fd018275 100644
+--- a/crates/sidebar/src/sidebar.rs
++++ b/crates/sidebar/src/sidebar.rs
+@@ -4628,7 +4628,7 @@ impl Sidebar {
+ 
+         h_flex()
+             .p_1()
+-            .when(cfg!(target_os = "ios"), |el| {
++            .when(cfg!(any(target_os = "ios", target_os = "android")), |el| {
+                 el.pt(px(8.)).pb(px(14.)).px(px(14.))
+             })
+             .gap_1()
+diff --git a/crates/ui/src/styles/platform.rs b/crates/ui/src/styles/platform.rs
+index 0d873a2ff2..ebc6376501 100644
+--- a/crates/ui/src/styles/platform.rs
++++ b/crates/ui/src/styles/platform.rs
+@@ -14,7 +14,7 @@ pub enum PlatformStyle {
+ impl PlatformStyle {
+     /// Returns the [`PlatformStyle`] for the current platform.
+     pub const fn platform() -> Self {
+-        if cfg!(any(target_os = "linux", target_os = "freebsd")) {
++        if cfg!(any(target_os = "linux", target_os = "freebsd", target_os = "android")) {
+             Self::Linux
+         } else if cfg!(target_os = "windows") {
+             Self::Windows
+diff --git a/crates/workspace/src/dock.rs b/crates/workspace/src/dock.rs
+index 8738d62641..ee8b50fca1 100644
+--- a/crates/workspace/src/dock.rs
++++ b/crates/workspace/src/dock.rs
+@@ -713,7 +713,7 @@ impl Dock {
+ 
+         self.restore_state(window, cx);
+ 
+-        if (!cfg!(target_os = "ios") || self.serialized_dock.is_none())
++        if (!cfg!(any(target_os = "ios", target_os = "android")) || self.serialized_dock.is_none())
+             && panel.read(cx).starts_open(window, cx)
+         {
+             self.activate_panel(index, window, cx);
+@@ -1042,7 +1042,7 @@ impl Render for Dock {
+             let create_resize_handle = || {
+                 let handle = div()
+                     .id("resize-handle")
+-                    .when(cfg!(target_os = "ios"), |handle| {
++                    .when(cfg!(any(target_os = "ios", target_os = "android")), |handle| {
+                         handle.hover(|style| style.bg(cx.theme().colors().text_muted))
+                     })
+                     .on_drag(DraggedDock(position), |dock, _, _, cx| {
+@@ -1331,7 +1331,7 @@ impl Render for PanelButtons {
+         let has_buttons = !buttons.is_empty();
+         let divider_color = cx.theme().colors().border;
+         let divider = || {
+-            if cfg!(target_os = "ios") {
++            if cfg!(any(target_os = "ios", target_os = "android")) {
+                 div().w_px().h(px(20.)).bg(divider_color).into_any_element()
+             } else {
+                 Divider::vertical()
+diff --git a/crates/workspace/src/multi_workspace.rs b/crates/workspace/src/multi_workspace.rs
+index 30350a0943..8136f79a6f 100644
+--- a/crates/workspace/src/multi_workspace.rs
++++ b/crates/workspace/src/multi_workspace.rs
+@@ -1852,6 +1852,11 @@ impl Render for MultiWorkspace {
+ 
+         let ui_font = theme_settings::setup_ui_font(window, cx);
+         let text_color = cx.theme().colors().text;
++        #[cfg(target_os = "android")]
++        let insets = cx.try_global::<crate::AndroidWindowInsets>()
++            .map(|provider| (provider.0)()).unwrap_or_default();
++        #[cfg(not(target_os = "android"))]
++        let insets = gpui::Edges::<gpui::Pixels>::default();
+ 
+         let workspace = self.workspace().clone();
+         let workspace_key_context = workspace.update(cx, |workspace, cx| workspace.key_context(cx));
+@@ -1861,6 +1866,7 @@ impl Render for MultiWorkspace {
+             root.key_context(workspace_key_context)
+                 .relative()
+                 .size_full()
++                .pt(insets.top).pb(insets.bottom).pl(insets.left).pr(insets.right)
+                 .font(ui_font)
+                 .text_color(text_color)
+                 .on_action(cx.listener(Self::close_window))
+diff --git a/crates/workspace/src/pane.rs b/crates/workspace/src/pane.rs
+index 47e6d5ff6e..65947999c1 100644
+--- a/crates/workspace/src/pane.rs
++++ b/crates/workspace/src/pane.rs
+@@ -1943,7 +1943,7 @@ impl Pane {
+     ) -> Task<Result<()>> {
+         // Closing is asynchronous. On iPad, preserve pane focus across that
+         // await so shortcuts still have a target after the final tab closes.
+-        let restore_focus_after_close = cfg!(target_os = "ios") && self.has_focus(window, cx);
++        let restore_focus_after_close = cfg!(any(target_os = "ios", target_os = "android")) && self.has_focus(window, cx);
+         // Find the items to close.
+         let mut items_to_close = Vec::new();
+         for item in &self.items {
+@@ -2058,7 +2058,7 @@ impl Pane {
+             // The last item's deactivation can move focus after remove_item
+             // focused the surviving pane. Restore it after the close and
+             // after that pane has rendered into the dispatch tree.
+-            if cfg!(target_os = "ios") {
++            if cfg!(any(target_os = "ios", target_os = "android")) {
+                 workspace
+                     .update_in(cx, |workspace, window, cx| {
+                         workspace.restore_ios_pane_focus(window, cx)
+@@ -2989,7 +2989,9 @@ impl Pane {
+                     match show_close_button {
+                         ShowCloseButton::Always => IconButton::new("close tab", IconName::Close),
+                         ShowCloseButton::Hover => {
+-                            IconButton::new("close tab", IconName::Close).visible_on_hover("")
++                            IconButton::new("close tab", IconName::Close)
++                                // Touch users need a discoverable exit without hovering.
++                                .when(!cfg!(target_os = "android"), |button| button.visible_on_hover(""))
+                         }
+                         ShowCloseButton::Hidden => return this,
+                     }
+@@ -3648,7 +3650,7 @@ impl Pane {
+                 this.handle_external_paths_drop(paths, window, cx)
+             }))
+             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+-                if !cfg!(target_os = "ios") && event.click_count() == 2 {
++                if !cfg!(any(target_os = "ios", target_os = "android")) && event.click_count() == 2 {
+                     window.dispatch_action(this.double_click_dispatch_action.boxed_clone(), cx);
+                 }
+             }))
+@@ -3694,7 +3696,7 @@ impl Pane {
+                 this.handle_external_paths_drop(paths, window, cx)
+             }))
+             .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+-                if !cfg!(target_os = "ios") && event.click_count() == 2 {
++                if !cfg!(any(target_os = "ios", target_os = "android")) && event.click_count() == 2 {
+                     window.dispatch_action(this.double_click_dispatch_action.boxed_clone(), cx);
+                 }
+             }))
+@@ -4482,7 +4484,7 @@ impl Render for Pane {
+                                 .justify_center()
+                                 .on_click(cx.listener(
+                                     move |this, event: &ClickEvent, window, cx| {
+-                                        if cfg!(target_os = "ios") {
++                                        if cfg!(any(target_os = "ios", target_os = "android")) {
+                                             this.focus_handle.focus(window, cx);
+                                             if event.click_count() == 1 {
+                                                 cx.spawn_in(window, async move |pane, cx| {
+@@ -4499,7 +4501,7 @@ impl Render for Pane {
+                                                 .detach();
+                                             }
+                                         }
+-                                        if !cfg!(target_os = "ios") && event.click_count() == 2 {
++                                        if !cfg!(any(target_os = "ios", target_os = "android")) && event.click_count() == 2 {
+                                             window.dispatch_action(
+                                                 this.double_click_dispatch_action.boxed_clone(),
+                                                 cx,
+diff --git a/crates/workspace/src/pane_group.rs b/crates/workspace/src/pane_group.rs
+index e47f9f63a8..2bc772451f 100644
+--- a/crates/workspace/src/pane_group.rs
++++ b/crates/workspace/src/pane_group.rs
+@@ -1493,7 +1493,7 @@ mod element {
+                         window.set_cursor_style(cursor_style, &handle.hitbox);
+                     }
+ 
+-                    let divider_hovered = cfg!(target_os = "ios")
++                    let divider_hovered = cfg!(any(target_os = "ios", target_os = "android"))
+                         && (handle.hitbox.is_hovered(window)
+                             || layout.dragged_handle.borrow().as_ref() == Some(&ix));
+                     let divider_bounds = if divider_hovered {
+@@ -1518,7 +1518,7 @@ mod element {
+                             cx.theme().colors().pane_group_border
+                         },
+                     ));
+-                    if cfg!(target_os = "ios") {
++                    if cfg!(any(target_os = "ios", target_os = "android")) {
+                         let hitbox = handle.hitbox.clone();
+                         window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, _| {
+                             if phase.bubble() && hitbox.is_hovered(window) != divider_hovered {
+diff --git a/crates/workspace/src/status_bar.rs b/crates/workspace/src/status_bar.rs
+index e6d8218856..00053269ff 100644
+--- a/crates/workspace/src/status_bar.rs
++++ b/crates/workspace/src/status_bar.rs
+@@ -77,7 +77,7 @@ impl Render for StatusBar {
+             .gap(DynamicSpacing::Base08.rems(cx))
+             .p(DynamicSpacing::Base04.rems(cx))
+             // Keep controls clear of the iPadOS resize edges without enlarging the bar.
+-            .when(cfg!(target_os = "ios"), |el| {
++            .when(cfg!(any(target_os = "ios", target_os = "android")), |el| {
+                 el.pt(px(8.)).pb(px(14.)).px(px(14.))
+             })
+             .bg(cx.theme().colors().status_bar_background)
+@@ -152,7 +152,7 @@ impl StatusBar {
+         let indicator_border = cx.theme().colors().status_bar_background;
+         let divider_color = cx.theme().colors().border;
+         let divider = || {
+-            if cfg!(target_os = "ios") {
++            if cfg!(any(target_os = "ios", target_os = "android")) {
+                 div().w_px().h(px(20.)).bg(divider_color).into_any_element()
+             } else {
+                 Divider::vertical()
+diff --git a/crates/workspace/src/welcome.rs b/crates/workspace/src/welcome.rs
+index 5bfed0ceed..c083a078f4 100644
+--- a/crates/workspace/src/welcome.rs
++++ b/crates/workspace/src/welcome.rs
+@@ -161,6 +161,7 @@ impl SectionEntry {
+     }
+ }
+ 
++#[cfg(not(target_os = "android"))]
+ const CONTENT: (Section<4>, Section<3>) = (
+     Section {
+         title: "Get Started",
+@@ -219,6 +220,36 @@ const CONTENT: (Section<4>, Section<3>) = (
+     },
+ );
+ 
++// Android iZed is a remote-workspace client. Desktop file pickers,
++// cloning and settings windows are not wired into its application host.
++#[cfg(target_os = "android")]
++const CONTENT: (Section<3>, Section<0>) = (
++    Section {
++        title: "Remote workspaces",
++        entries: [
++            SectionEntry {
++                icon: IconName::Server,
++                title: "Open Remote",
++                action: &zed_actions::OpenRemote { from_existing_connection: false, create_new_window: false },
++                visibility_guard: SectionVisibility::Always,
++            },
++            SectionEntry {
++                icon: IconName::FolderOpen,
++                title: "Recent Remote Projects",
++                action: &zed_actions::OpenRecent { create_new_window: false },
++                visibility_guard: SectionVisibility::Always,
++            },
++            SectionEntry {
++                icon: IconName::ListCollapse,
++                title: "Open Command Palette",
++                action: &command_palette::Toggle,
++                visibility_guard: SectionVisibility::Always,
++            },
++        ],
++    },
++    Section { title: "", entries: [] },
++);
++
+ struct Section<const COLS: usize> {
+     title: &'static str,
+     entries: [SectionEntry; COLS],
+@@ -497,8 +528,8 @@ impl Render for WelcomePage {
+                             ),
+                     )
+                     .child(first_section.render(Default::default(), &self.focus_handle))
+-                    .child(second_section)
+-                    .when(ai_enabled && !showing_recent_projects, |this| {
++                    .when(!cfg!(target_os = "android"), |this| this.child(second_section))
++                    .when(!cfg!(target_os = "android") && ai_enabled && !showing_recent_projects, |this| {
+                         let agent_tab_index = next_tab_index;
+                         next_tab_index += 1;
+                         this.child(self.render_agent_card(agent_tab_index, cx))
+diff --git a/crates/workspace/src/workspace.rs b/crates/workspace/src/workspace.rs
+index ee494421c6..e59f2c3be0 100644
+--- a/crates/workspace/src/workspace.rs
++++ b/crates/workspace/src/workspace.rs
+@@ -40,6 +40,13 @@ pub use multi_workspace::{
+ pub use path_list::{PathList, SerializedPathList};
+ pub use toast_layer::{ToastAction, ToastLayer, ToastView};
+ 
++/// The Android host supplies current system-bar/cutout bounds without making
++/// the shared workspace depend on a native platform implementation.
++#[cfg(target_os = "android")]
++pub struct AndroidWindowInsets(pub fn() -> gpui::Edges<gpui::Pixels>);
++#[cfg(target_os = "android")]
++impl gpui::Global for AndroidWindowInsets {}
++
+ use anyhow::{Context as _, Result, anyhow};
+ use client::{
+     ChannelId, Client, ErrorExt, ParticipantIndex, Status, TypedEnvelope, User, UserStore,
+@@ -1664,7 +1671,7 @@ impl Workspace {
+             &modal_layer,
+             window,
+             |workspace, _, _: &modal_layer::ModalDismissedEvent, window, cx| {
+-                if cfg!(target_os = "ios") {
++                if cfg!(any(target_os = "ios", target_os = "android")) {
+                     workspace.restore_ios_pane_focus(window, cx);
+                     cx.spawn_in(window, async move |workspace, cx| {
+                         cx.background_executor()
+@@ -6379,7 +6386,7 @@ impl Workspace {
+ 
+     pub fn on_window_activation_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+         if window.is_window_active() {
+-            #[cfg(target_os = "ios")]
++            #[cfg(any(target_os = "ios", target_os = "android"))]
+             if let Some(remote_client) = self.project.read(cx).remote_client() {
+                 remote_client.update(cx, |client, cx| client.check_after_resume(cx));
+             }
+@@ -6536,7 +6543,7 @@ impl Workspace {
+             focus_on.update(cx, |pane, cx| window.focus(&pane.focus_handle(cx), cx));
+         } else if self.active_pane() == pane {
+             let surviving_pane = self.panes.last().unwrap().clone();
+-            if cfg!(target_os = "ios") {
++            if cfg!(any(target_os = "ios", target_os = "android")) {
+                 self.active_pane = surviving_pane.clone();
+             }
+             surviving_pane.update(cx, |pane, cx| window.focus(&pane.focus_handle(cx), cx));
+diff --git a/crates/zed_credentials_provider/src/zed_credentials_provider.rs b/crates/zed_credentials_provider/src/zed_credentials_provider.rs
+index 9775dffbf2..da0bcaa20c 100644
+--- a/crates/zed_credentials_provider/src/zed_credentials_provider.rs
++++ b/crates/zed_credentials_provider/src/zed_credentials_provider.rs
+@@ -43,7 +43,7 @@ pub fn global(cx: &App) -> Arc<dyn CredentialsProvider> {
+ }
+ 
+ fn new(cx: &App) -> Arc<dyn CredentialsProvider> {
+-    #[cfg(target_os = "ios")]
++    #[cfg(any(target_os = "ios", target_os = "android"))]
+     {
+         let _ = cx;
+         return Arc::new(KeychainCredentialsProvider);

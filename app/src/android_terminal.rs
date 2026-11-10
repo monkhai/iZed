@@ -9,7 +9,7 @@ use std::ffi::{c_char, c_void, CStr};
 
 const UI: &str = "com.monkhai.ized.platform.TerminalUi";
 
-fn call(action: &str, payload: &str) -> Result<(), String> {
+pub(crate) fn call(action: &str, payload: &str) -> Result<(), String> {
     android::with_env(|env| {
         let activity = android::activity(env)?;
         let class = android::find_app_class(env, UI)?;
@@ -32,6 +32,9 @@ fn call(action: &str, payload: &str) -> Result<(), String> {
     })
 }
 fn publish_error(error: String) {
+    #[cfg(feature = "ized")]
+    crate::android_ide::record_network_error(error);
+    #[cfg(not(feature = "ized"))]
     send_native_event(NativeEvent::TailscaleError(error));
 }
 pub(crate) fn open_login(url: &str) -> anyhow::Result<()> {

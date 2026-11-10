@@ -225,6 +225,8 @@ pub struct AndroidKeyEvent {
 /// A single touch point from `AInputEvent`.
 #[derive(Clone, Debug)]
 pub struct TouchPoint {
+    /// Android event timestamp in nanoseconds; independent of render latency.
+    pub event_time_ns: i64,
     pub id: i32,
     pub x: f32,
     pub y: f32,
@@ -249,3 +251,6 @@ pub fn init_logger() {
         log::info!("gpui-android logger initialised");
     });
 }
+
+mod credentials;
+mod prompts;

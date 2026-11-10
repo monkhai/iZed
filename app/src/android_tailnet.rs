@@ -2,7 +2,7 @@
 use crate::{
     android_terminal,
     ssh::TailscaleProxy,
-    terminal_app::{send_native_event, NativeEvent},
+    terminal_app::NativeEvent,
 };
 use anyhow::{Context, Result};
 use std::{
@@ -54,6 +54,13 @@ static COMMANDS: LazyLock<mpsc::Sender<Command>> = LazyLock::new(|| {
 });
 pub(crate) fn command(command: Command) {
     let _ = COMMANDS.send(command);
+}
+
+fn send_native_event(event: NativeEvent) {
+    #[cfg(feature = "ized")]
+    crate::android_ide::network_event(event);
+    #[cfg(not(feature = "ized"))]
+    crate::terminal_app::send_native_event(event);
 }
 
 struct Node(i32);
@@ -133,14 +140,12 @@ impl Node {
             )?;
             let endpoint: std::net::SocketAddr =
                 CStr::from_ptr(address.as_ptr()).to_str()?.parse()?;
-            send_native_event(NativeEvent::TailscaleUpdate(
-                text,
-                TailscaleProxy {
-                    host: endpoint.ip().to_string(),
-                    port: endpoint.port(),
-                    password: Zeroizing::new(CStr::from_ptr(proxy.as_ptr()).to_str()?.to_owned()),
-                },
-            ));
+            let proxy = TailscaleProxy {
+                host: endpoint.ip().to_string(),
+                port: endpoint.port(),
+                password: Zeroizing::new(CStr::from_ptr(proxy.as_ptr()).to_str()?.to_owned()),
+            };
+            send_native_event(NativeEvent::TailscaleUpdate(text, proxy));
         }
         Ok(true)
     }

@@ -61,36 +61,96 @@ use super::{
 };
 use gpui_wgpu::GpuContext;
 
-// ── stub: clipboard ───────────────────────────────────────────────────────────
+// GPUI clipboard support is always available, even when the optional package
+// facade is disabled. Reuse its existing Android ClipboardManager bridge.
+#[cfg(feature = "clipboard")]
+use crate::packages::clipboard as system_clipboard;
+#[cfg(not(feature = "clipboard"))]
+#[path = "../packages/clipboard/android.rs"]
+mod system_clipboard;
 
-/// Android clipboard (thin wrapper over `ClipboardManager` via JNI).
-///
-/// A real implementation would call into Java via `jni-rs`; for now we use
-/// an in-process string store so the rest of the platform compiles.
+/// System text clipboard, with isolated storage only for headless platform tests.
 #[derive(Default)]
 pub struct AndroidClipboard {
+    headless: bool,
     contents: Option<String>,
 }
 
 impl AndroidClipboard {
     pub fn read(&self) -> Option<String> {
-        self.contents.clone()
+        if self.headless {
+            return self.contents.clone();
+        }
+        match system_clipboard::get_text() {
+            Ok(text) => text,
+            Err(_) => {
+                log::warn!("Could not read Android system clipboard");
+                None
+            }
+        }
     }
 
     pub fn write(&mut self, text: String) {
-        self.contents = Some(text);
+        if self.headless {
+            self.contents = Some(text);
+        } else if system_clipboard::set_text(&text).is_err() {
+            log::warn!("Could not write Android system clipboard");
+        }
     }
 
     pub fn clear(&mut self) {
-        self.contents = None;
+        if self.headless {
+            self.contents = None;
+        } else if system_clipboard::set_text("").is_err() {
+            log::warn!("Could not clear Android system clipboard");
+        }
     }
 }
 
-// ── stub: credential store ────────────────────────────────────────────────────
+/// Launch the same ACTION_VIEW intent used by the maps package without logging
+/// the URI: browser authentication links may contain sensitive parameters.
+fn open_external_url(url: &str) -> Result<(), String> {
+    use crate::android::jni::{self as jni_helpers, JniExt};
+    use jni::objects::JValue;
+    jni_helpers::with_env(|env| {
+        let result = (|| {
+            let activity = jni_helpers::activity(env)?;
+            let value = env.new_string(url).e()?;
+            let uri = env.call_static_method(
+                jni::jni_str!("android/net/Uri"),
+                jni::jni_str!("parse"),
+                jni::jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                &[JValue::Object(&value)],
+            ).and_then(|value| value.l()).e()?;
+            if uri.is_null() {
+                return Err("Could not parse external URL".into());
+            }
+            let action = env.new_string("android.intent.action.VIEW").e()?;
+            let intent = env.new_object(
+                jni::jni_str!("android/content/Intent"),
+                jni::jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"),
+                &[JValue::Object(&action), JValue::Object(&uri)],
+            ).e()?;
+            env.call_method(
+                &activity,
+                jni::jni_str!("startActivity"),
+                jni::jni_sig!("(Landroid/content/Intent;)V"),
+                &[JValue::Object(&intent)],
+            ).e()?;
+            Ok(())
+        })();
+        if result.is_err() {
+            env.exception_clear();
+        }
+        result
+    })
+}
+
+// ── credential store ────────────────────────────────────────────────────
 
 /// Android credential store backed by the Android Keystore system.
 ///
-/// Stubbed with an in-memory map; replace with a real JNI implementation.
+/// Headless tests keep isolated memory; Android devices use encrypted records.
 #[derive(Default)]
 pub struct AndroidCredentialStore {
     store: std::collections::HashMap<(String, String), Vec<u8>>,
@@ -98,6 +158,9 @@ pub struct AndroidCredentialStore {
 
 impl AndroidCredentialStore {
     pub fn write(&mut self, service: &str, username: &str, password: &[u8]) -> Result<()> {
+        if super::jni::android_app().is_some() {
+            return super::credentials::write(service, username, password);
+        }
         self.store.insert(
             (service.to_string(), username.to_string()),
             password.to_vec(),
@@ -106,6 +169,9 @@ impl AndroidCredentialStore {
     }
 
     pub fn read(&self, service: &str, username: &str) -> Result<Option<Vec<u8>>> {
+        if super::jni::android_app().is_some() {
+            return Ok(super::credentials::read(service)?.and_then(|(stored, secret)| (stored == username).then_some(secret)));
+        }
         Ok(self
             .store
             .get(&(service.to_string(), username.to_string()))
@@ -113,9 +179,40 @@ impl AndroidCredentialStore {
     }
 
     pub fn delete(&mut self, service: &str, username: &str) -> Result<()> {
+        if super::jni::android_app().is_some() {
+            if super::credentials::read(service)?.is_some_and(|(stored, _)| stored == username) {
+                super::credentials::delete(service)?;
+            }
+            return Ok(());
+        }
         self.store
             .remove(&(service.to_string(), username.to_string()));
         Ok(())
+    }
+}
+
+// The activity has one rendering surface. Keep its GPUI identity tied to the
+// wrapper lifetime, not to the native surface (which can disappear on pause).
+struct SingleWindowRegistration<H> {
+    current: Option<(H, std::sync::Weak<()>)>,
+}
+
+impl<H: Copy> SingleWindowRegistration<H> {
+    fn new() -> Self { Self { current: None } }
+
+    fn active_handle(&self) -> Option<H> {
+        self.current.as_ref().and_then(|(handle, lifetime)| {
+            lifetime.upgrade().map(|_| *handle)
+        })
+    }
+
+    fn register(&mut self, handle: H) -> std::result::Result<Arc<()>, &'static str> {
+        if self.active_handle().is_some() {
+            return Err("Android supports one GPUI window; open the project in the existing window");
+        }
+        let lifetime = Arc::new(());
+        self.current = Some((handle, Arc::downgrade(&lifetime)));
+        Ok(lifetime)
     }
 }
 
@@ -132,6 +229,7 @@ struct AndroidPlatformState {
 
     // ── windows / displays ────────────────────────────────────────────────────
     windows: WindowList,
+    gpui_window: SingleWindowRegistration<AnyWindowHandle>,
     displays: DisplayList,
 
     // ── text ──────────────────────────────────────────────────────────────────
@@ -403,9 +501,10 @@ impl AndroidPlatform {
                 dispatcher,
                 gpu_context: Rc::new(RefCell::new(None)),
                 windows: WindowList::default(),
+                gpui_window: SingleWindowRegistration::new(),
                 displays,
                 text_system,
-                clipboard: AndroidClipboard::default(),
+                clipboard: AndroidClipboard { headless, ..Default::default() },
                 credentials: AndroidCredentialStore::default(),
                 finish_launching: None,
                 quit_callback: None,
@@ -938,7 +1037,9 @@ impl AndroidPlatform {
     ///
     /// Useful in headless tests where there is no real ALooper.
     pub fn flush_main_thread_tasks(&self) {
-        self.state.lock().dispatcher.flush_main_thread_tasks();
+        // Callbacks can re-enter the platform (for example, to find a window).
+        let dispatcher = self.state.lock().dispatcher.clone();
+        dispatcher.flush_main_thread_tasks();
     }
 }
 
@@ -1031,16 +1132,12 @@ impl Platform for AndroidPlatform {
     }
 
     fn active_window(&self) -> Option<AnyWindowHandle> {
-        // Android does not have a window-stack concept — there is at most one
-        // active window (the primary window).  GPUI uses `AnyWindowHandle`
-        // which requires an entity id we don't have from the platform layer,
-        // so return `None` and let the GPUI app context track the active window.
-        None
+        self.state.lock().gpui_window.active_handle()
     }
 
     fn open_window(
         &self,
-        _handle: AnyWindowHandle,
+        handle: AnyWindowHandle,
         _options: WindowParams,
     ) -> anyhow::Result<Box<dyn PlatformWindow>> {
         // On Android the native window is created by the system via
@@ -1061,19 +1158,26 @@ impl Platform for AndroidPlatform {
             .primary()
             .map(|d| Rc::new(d.clone()) as Rc<dyn PlatformDisplay>);
 
+        // Reject a second wrapper before its constructor replaces the shared
+        // IME/input/frame callbacks on the sole native activity surface.
+        let registration = self.state.lock().gpui_window.register(handle)
+            .map_err(anyhow::Error::msg)?;
         Ok(Box::new(super::window::AndroidPlatformWindow::new(
             window, display,
-        )))
+        ).with_registration(registration)))
     }
 
     fn window_appearance(&self) -> WindowAppearance {
-        WindowAppearance::Dark
+        if super::jni::query_night_mode_via_jni() { WindowAppearance::Dark } else { WindowAppearance::Light }
     }
 
     fn open_url(&self, url: &str) {
-        // A full implementation would call startActivity with an ACTION_VIEW
-        // Intent via JNI.  For now, log the request.
-        log::info!("AndroidPlatform::open_url({url}) — Intent launch not yet implemented");
+        if self.is_headless() {
+            return;
+        }
+        if open_external_url(url).is_err() {
+            log::warn!("Could not open external URL on Android");
+        }
     }
 
     fn on_open_urls(&self, callback: Box<dyn FnMut(Vec<String>)>) {
@@ -1203,25 +1307,15 @@ impl Platform for AndroidPlatform {
     }
 
     fn write_credentials(&self, url: &str, username: &str, password: &[u8]) -> Task<Result<()>> {
-        let result = self.state.lock().credentials.write(url, username, password);
-        Task::ready(result)
+        Task::ready(super::credentials::write(url, username, password))
     }
 
     fn read_credentials(&self, url: &str) -> Task<Result<Option<(String, Vec<u8>)>>> {
-        // The credential store is keyed by (service, username) but the
-        // Platform trait only provides `url`.  Use a fixed username for now.
-        let result = self
-            .state
-            .lock()
-            .credentials
-            .read(url, "default")
-            .map(|opt| opt.map(|pw| ("default".to_string(), pw)));
-        Task::ready(result)
+        Task::ready(super::credentials::read(url))
     }
 
     fn delete_credentials(&self, url: &str) -> Task<Result<()>> {
-        let result = self.state.lock().credentials.delete(url, "default");
-        Task::ready(result)
+        Task::ready(super::credentials::delete(url))
     }
 
     fn keyboard_layout(&self) -> Box<dyn PlatformKeyboardLayout> {
@@ -1651,10 +1745,46 @@ mod tests {
         headless().flush_main_thread_tasks();
     }
 
+    #[test]
+    fn queued_callbacks_run_without_platform_lock() {
+        let platform = Arc::new(headless());
+        let callback_platform = platform.clone();
+        platform.foreground_executor().dispatch_on_main_thread(move || {
+            assert!(callback_platform.state.try_lock().is_some());
+        });
+        platform.flush_main_thread_tasks();
+    }
+
     // ── tick ─────────────────────────────────────────────────────────────────
 
     #[test]
     fn tick_no_panic() {
         headless().tick();
+    }
+}
+
+#[cfg(test)]
+mod single_window_registration_tests {
+    use super::SingleWindowRegistration;
+
+    #[test]
+    fn reports_the_registered_handle_only_while_wrapper_lives() {
+        let mut registration = SingleWindowRegistration::new();
+        assert_eq!(registration.active_handle(), None);
+        let lifetime = registration.register(7).unwrap();
+        assert_eq!(registration.active_handle(), Some(7));
+        drop(lifetime);
+        assert_eq!(registration.active_handle(), None);
+    }
+
+    #[test]
+    fn rejects_second_window_without_replacing_first_and_allows_reopen() {
+        let mut registration = SingleWindowRegistration::new();
+        let first = registration.register(7).unwrap();
+        assert!(registration.register(8).is_err());
+        assert_eq!(registration.active_handle(), Some(7));
+        drop(first);
+        let _second = registration.register(8).unwrap();
+        assert_eq!(registration.active_handle(), Some(8));
     }
 }

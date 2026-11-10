@@ -72,7 +72,7 @@ pub struct TailscaleProxy {
     pub password: Zeroizing<String>,
 }
 
-async fn tailscale_stream(proxy: &TailscaleProxy, host: &str, port: u16) -> Result<TcpStream> {
+pub(crate) async fn tailscale_stream(proxy: &TailscaleProxy, host: &str, port: u16) -> Result<TcpStream> {
     let mut stream = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
 
     // TailscaleKit exposes a loopback SOCKS5 proxy for outbound tailnet TCP.

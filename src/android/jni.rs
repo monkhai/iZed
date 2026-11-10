@@ -449,12 +449,14 @@ fn process_input_events(app: &AndroidApp) {
                                         AMOTION_EVENT_ACTION_UP
                                     }
                                     MotionAction::Move => AMOTION_EVENT_ACTION_MOVE,
-                                    MotionAction::Cancel => AMOTION_EVENT_ACTION_UP,
+                                    MotionAction::Cancel => 3,
                                     _ => continue,
                                 };
 
                                 let touch = crate::android::TouchPoint {
+                                    event_time_ns: motion_event.event_time(),
                                     id: pointer.pointer_id(),
+                                    // Motion coordinates already use the native surface space.
                                     x: pointer.x(),
                                     y: pointer.y(),
                                     action: touch_action,
@@ -775,6 +777,7 @@ pub fn run_event_loop(app: &AndroidApp) {
                     platform.flush_main_thread_tasks();
                     if let Some(win) = platform.primary_window() {
                         win.request_frame();
+                        super::window::sync_ime();
                     }
                 }
             }
@@ -786,6 +789,7 @@ pub fn run_event_loop(app: &AndroidApp) {
                 platform.flush_main_thread_tasks();
                 if let Some(win) = platform.primary_window() {
                     win.request_frame();
+                    super::window::sync_ime();
                 }
 
                 // Drain lifecycle events that arrived during rendering
@@ -984,6 +988,7 @@ pub fn poll_events(timeout_ms: i32) -> bool {
         platform.flush_main_thread_tasks();
         if let Some(win) = platform.primary_window() {
             win.request_frame();
+            super::window::sync_ime();
         }
     }
 
@@ -1200,20 +1205,20 @@ pub fn set_system_chrome(style: &crate::SystemChromeStyle) {
 
 // ── software keyboard (IME) control ───────────────────────────────────────────
 
-/// Show the software keyboard on Android with a specific keyboard type.
-/// Show the software keyboard on Android.
-///
-/// Uses the NDK `ANativeActivity_showSoftInput` via `android-activity`.
-/// The previous EditText/JNI approach silently failed with
-/// `CalledFromWrongThreadException` because all JNI View operations
-/// must run on the Android UI thread, not the native Rust thread.
-/// The NDK function handles the UI-thread dispatch internally.
-///
-/// Text input arrives via `KeyEvent`s through `process_input_events()`.
+/// Show an editor's input connection when available; preserve NDK input for
+/// existing custom GPUI widgets without a PlatformInputHandler.
 pub fn show_keyboard_android(_keyboard_type: crate::KeyboardType) {
-    if let Some(app) = android_app() {
-        log::info!("show_keyboard_android: using NDK show_soft_input");
-        app.show_soft_input(false);
+    if let Some(platform) = platform() {
+        platform.foreground_executor().dispatch_on_main_thread(|| {
+            super::window::sync_ime();
+            let _ = with_env(|env| {
+                let class = find_app_class(env, "com/monkhai/ized/platform/GpuiTextInput")?;
+                let activity = activity(env)?;
+                env.call_static_method(&class, jni::jni_str!("show"), jni::jni_sig!("(Landroid/app/Activity;)V"), &[JValue::Object(&activity)]).e()?;
+                Ok(())
+            });
+            if let Some(app) = android_app() { app.show_soft_input(false); }
+        });
     }
 }
 
@@ -1275,7 +1280,7 @@ pub unsafe extern "C" fn Java_com_monkhai_ized_platform_GpuiActivity_nativeOnDee
         if url_string.is_empty() {
             return Ok(());
         }
-        log::info!("nativeOnDeepLink: {}", url_string);
+        log::info!("Received app link");
 
         #[cfg(feature = "deeplink")]
         {
@@ -1369,5 +1374,64 @@ mod tests {
     #[test]
     fn platform_returns_none_before_init() {
         assert!(platform().is_none());
+    }
+}
+
+
+pub(super) fn publish_ime(snapshot: Option<&(String, i32, i32, i32, i32, i32, i64)>) -> bool {
+    let result = with_env(|env| {
+        let result = (|| {
+        let class = find_app_class(env, "com/monkhai/ized/platform/GpuiTextInput")?;
+        let activity = activity(env)?;
+        let empty = (String::new(), 0, 0, 0, -1, -1, 0);
+        let value = snapshot.unwrap_or(&empty);
+        let text = env.new_string(&value.0).e()?;
+        env.call_static_method(&class, jni::jni_str!("update"), jni::jni_sig!("(Landroid/app/Activity;ZLjava/lang/String;IIIIIJ)V"), &[
+            JValue::Object(&activity), JValue::Bool(snapshot.is_some()), JValue::Object(&text),
+            JValue::Int(value.1), JValue::Int(value.2), JValue::Int(value.3),
+            JValue::Int(value.4), JValue::Int(value.5), JValue::Long(value.6),
+        ]).e()?;
+        Ok(())
+        })();
+        if result.is_err() { env.exception_clear(); }
+        result
+    });
+    if result.is_err() { log::warn!("Editor input state could not be published"); }
+    result.is_ok()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_monkhai_ized_platform_GpuiTextInput_nativeEdit(
+    _env: *mut c_void, _class: *mut c_void, mode: i32, start: i32, end: i32,
+    text: *mut c_void, selection_start: i32, selection_end: i32, serial: i64,
+) {
+    let text = with_env(|env| {
+        let object = unsafe { JObject::from_raw(env, text as jni::sys::jobject) };
+        Ok(get_string(env, &object))
+    });
+    if let (Ok(text), Some(platform)) = (text, platform()) {
+        platform.foreground_executor().dispatch_on_main_thread(move || {
+            super::window::ime_edit(mode, start, end, text, selection_start, selection_end, serial);
+        });
+    }
+}
+
+/// Forward focused proxy-View keys through the same path as NDK input events.
+/// # Safety
+/// Called by the JVM with primitive key-event fields only.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn Java_com_monkhai_ized_platform_GpuiTextInput_nativeKey(
+    _env: *mut c_void, _class: *mut c_void, key_code: i32, action: i32,
+    meta_state: i32, unicode_char: i32,
+) {
+    if let Some(platform) = platform() {
+        let executor = platform.foreground_executor();
+        executor.dispatch_on_main_thread(move || {
+            if let Some(window) = platform.primary_window() {
+                window.handle_key_event(crate::android::AndroidKeyEvent {
+                    key_code, action, meta_state, unicode_char: unicode_char as u32,
+                });
+            }
+        });
     }
 }
