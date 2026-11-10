@@ -125,7 +125,14 @@ public class GpuiActivity extends NativeActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (isNativeReady()) TerminalUi.resume();
+    }
+
+    @Override
     protected void onDestroy() {
+        TerminalUi.destroy();
         // Release media session when activity is destroyed.
         GpuiMediaSession.release();
         super.onDestroy();

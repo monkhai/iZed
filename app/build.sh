@@ -432,6 +432,9 @@ build_android() {
         ./gradlew clean 2>/dev/null || true
     fi
 
+    step "Building embedded Tailscale for Android"
+    bash "$APP_DIR/android/build-tailscale.sh"
+
     # ── Build the Rust shared library via cargo-ndk ──────────────────────
     step "Building Rust shared library for ${ndk_abi} (${PROFILE})"
 
@@ -452,6 +455,14 @@ build_android() {
         exit 1
     fi
     info "Shared library: $so_path ($(du -h "$so_path" | cut -f1))"
+
+    # Keep full symbols in Cargo's target directory, but do not ship hundreds of
+    # megabytes of DWARF in the emulator APK (updates need room for both copies).
+    local ndk_dir="${ANDROID_NDK_HOME:-${ANDROID_HOME}/ndk/26.1.10909125}"
+    local host_tag="darwin-x86_64"
+    if [[ "$(uname -s)" == "Linux" ]]; then host_tag="linux-x86_64"; fi
+    local strip_tool="$ndk_dir/toolchains/llvm/prebuilt/$host_tag/bin/llvm-strip"
+    "$strip_tool" --strip-debug "$jni_libs_dir/${ndk_abi}/"*.so
 
     # ── Assemble APK via Gradle ──────────────────────────────────────────
     step "Assembling APK (${gradle_task})"

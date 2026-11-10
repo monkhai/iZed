@@ -115,3 +115,4 @@ schemes:
       targets: [iZedTerminalUITests]
       environmentVariables:
         IZED_TEST_HOST: "$(IZED_TEST_HOST)"
+        IZED_TEST_FINGERPRINT: "$(IZED_TEST_FINGERPRINT)"

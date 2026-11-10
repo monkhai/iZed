@@ -59,6 +59,25 @@ session per saved connection. Password authentication, key import, jump hosts,
 file transfers, and automatic session restoration are not implemented. iOS can
 suspend the app in the background, so session continuity is best-effort.
 
+## Android UI milestone
+
+The Android host in `app/src/android_terminal.rs` opens the shared terminal
+presentation from `src/presentation.rs`: session header, Machines landing screen,
+buttons, and accessory keys. It uses JetBrains Mono and Vercel Dark colors.
+The iOS application and its native services remain separate.
+
+This is explicitly a **local UI preview**, not an SSH terminal yet. Browse opens
+an input fixture; accessory keys record local events, Ctrl applies to the next
+key, and Esc/Back returns to Machines. The session menu can reset the fixture.
+No shell, machine discovery, Tailscale, credential storage, or remote connection
+is initialized. No success is simulated for those unavailable services.
+
+Build from the repository root with
+`RUSTUP_TOOLCHAIN=1.94.1 ./app/build.sh android --no-run`.
+Use the dedicated newer emulator for rendering checks; shader metadata and
+validation remain enabled. Physical devices and iOS runtime compatibility have
+not been validated by this milestone.
+
 ## Build
 
 Requirements: Xcode 16.1 or later, Go 1.27.1 or later, Rust, and an iPhone or
@@ -87,14 +106,26 @@ that roster import includes computers and excludes mobile devices and credential
 public key and **never executes received commands**. It deliberately splits ANSI
 and UTF-8 sequences across packets and records PTY sizes, input, and Ctrl-C.
 
+See [tests/README.md](tests/README.md) for setup, host fingerprint verification,
+and fixture limitations.
+
 Install Paramiko into a temporary Python virtual environment, copy the public-only
 `Documents/device-public-key.pub` from the app container, then start the fixture:
 
 ```sh
-python tests/ssh_fixture.py --bind YOUR_MAC_IP --key phone.pub --events /tmp/ssh-events.jsonl
+python tests/ssh_fixture.py --key phone.pub --events /tmp/ssh-events.jsonl
 ```
 
-Run Xcode tests with `IZED_TEST_HOST=smoke@YOUR_MAC_IP:22222`. The test uses a
-separate host-settings file; the debug-only automatic test connection is enabled
-only when both test launch environment variables are present. Review the fixture
-events as well as the XCTest results and screenshots. Stop the fixture afterward.
+For the live iOS tests, separately forward the fixture machine's Tailscale port 22
+to this loopback listener on port 22222. Run Xcode tests with
+`IZED_TEST_HOST=smoke@FIXTURE_TAILSCALE_IP` (port 22) and
+`IZED_TEST_FINGERPRINT=SHA256:...` set to the independently observed fixture
+fingerprint. The tests use the normal
+machine picker after live Tailscale discovery and isolate saved hosts with
+`IZED_PICKER_TEST`; they do not use the automatic smoke-test connection.
+Show the simulator software keyboard before the keyboard-layout test. Start a
+fresh fixture for the host-verification tests and verify its printed fingerprint
+before allowing trust. Review fixture events, XCTest results and screenshots.
+Run only one platform simulator at a time to avoid unnecessary contention.
+Stop the fixture and forwarding helper afterward; saved Tailscale node state can
+be retained for later runs.

@@ -39,9 +39,16 @@ struct Node {
     ips: Vec<String>,
 }
 
+pub(crate) fn data_dir() -> PathBuf {
+    #[cfg(target_os = "android")]
+    { crate::android_terminal::data_dir() }
+    #[cfg(not(target_os = "android"))]
+    { PathBuf::from(std::env::var_os("HOME").unwrap()).join("Documents") }
+}
+
 impl Roster {
     pub fn path() -> PathBuf {
-        PathBuf::from(std::env::var_os("HOME").unwrap()).join("Documents/tailnet-machines.json")
+        data_dir().join("tailnet-machines.json")
     }
     pub fn load() -> Self {
         std::fs::read(Self::path())
